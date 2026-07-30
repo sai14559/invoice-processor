@@ -7,7 +7,6 @@ import requests
 import re
 import csv
 import os
-import zipfile
 import tempfile
 import pandas as pd
 from datetime import datetime
@@ -24,9 +23,9 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-# --- LOGIN GATEKEEPER (Fixed Location) ---
-# 'sidebar' puts the login box on the side, creating a dashboard feel
-name, authentication_status, username = authenticator.login('Login', 'sidebar')
+# --- LOGIN GATEKEEPER ---
+# Using keyword arguments (location='sidebar') forces the library to use the correct setting
+name, authentication_status, username = authenticator.login(location='sidebar')
 
 if authentication_status == False:
     st.error('Username/password is incorrect')
@@ -55,11 +54,10 @@ elif authentication_status:
                 "fileName": filename,
                 "invoiceNumber": re.search(r"Number\s*[|:]?\s*(\d+)", full_text).group(1) if re.search(r"Number\s*[|:]?\s*(\d+)", full_text) else "Not found",
                 "totalAmount": re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text).group(1) if re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text) else "0.00",
-                "items": []
             }
         return invoice_json
 
-    uploaded_files = st.file_uploader("Upload Invoices", type=["pdf", "zip"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Upload Invoices", type=["pdf"], accept_multiple_files=True)
 
     if uploaded_files:
         all_extracted_data = []
@@ -80,7 +78,6 @@ elif authentication_status:
                     writer.writerow(["Timestamp", "User", "FileName", "InvoiceNumber", "TotalAmount", "Status"])
                 
                 for item in all_extracted_data:
-                    # Logs the currently logged-in user's name
                     writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), name, item['fileName'], item['invoiceNumber'], item['totalAmount'], "Sent"])
             
             st.success("Data sent and logged!")
