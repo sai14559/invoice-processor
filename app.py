@@ -15,23 +15,19 @@ st.title("📄 Bulk Invoice Parser (Production Ready)")
 
 # --- CLEANING HELPERS ---
 def clean_description(text, material_code):
-    # Remove the material code (case insensitive)
     text = re.sub(re.escape(material_code), "", text, flags=re.IGNORECASE)
-    # Remove noise patterns
     noise = [r"COO: [A-Z]{2}", r"Customer Material:", r"\d+\s+Material:", r"Material:", r"Quantity:.*", r"Prices:.*", r"UoM", r"Rate", r"per", r"COO: US"]
     for pattern in noise:
         text = re.sub(pattern, "", text, flags=re.IGNORECASE)
     return " ".join(text.split()).strip()
 
 def get_price_from_row(row_list):
-    # Searches from right-to-left to grab the first valid number found
     for item in reversed(row_list):
         if item and re.search(r"[-+]?\d*\.\d+|\d+", str(item)):
             return str(item).replace("USD", "").strip()
     return "0.00"
 
 def process_pdf(file_path, filename):
-    """Processes a single PDF file and returns the JSON data."""
     with pdfplumber.open(file_path) as pdf:
         full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
         
@@ -53,7 +49,6 @@ def process_pdf(file_path, filename):
                     clean_row = [str(cell) for cell in row if cell is not None]
                     row_str = " ".join(clean_row)
                     
-                    # Match Material Codes: VF-style or numeric
                     material_match = re.search(r"([A-Z]{2}\d{5}|\d{8,})", row_str)
                     
                     if material_match:
@@ -69,7 +64,6 @@ def process_pdf(file_path, filename):
                         }
                         invoice_json["items"].append(current_item)
                     elif current_item:
-                        # Handle varied labels for pricing
                         if any(label in row_str for label in ["Public price", "Net Pricelist price"]):
                             current_item["publicPrice"] = get_price_from_row(clean_row)
                         elif "Discount" in row_str:
@@ -85,22 +79,22 @@ if uploaded_files:
     all_extracted_data = []
     files_to_process = []
     
-    # Process files and ZIP contents
     with tempfile.TemporaryDirectory() as temp_dir:
         for uploaded_file in uploaded_files:
             if uploaded_file.name.endswith(".zip"):
                 with zipfile.ZipFile(uploaded_file, 'r') as zip_ref:
                     zip_ref.extractall(temp_dir)
-                    for file_name in os.listdir(temp_dir):
-                        if file_name.endswith(".pdf"):
-                            files_to_process.append((os.path.join(temp_dir, file_name), file_name))
+                    # RECURSIVE SEARCH: Looks in all subfolders
+                    for root, dirs, files in os.walk(temp_dir):
+                        for file_name in files:
+                            if file_name.lower().endswith(".pdf"):
+                                files_to_process.append((os.path.join(root, file_name), file_name))
             else:
                 temp_path = os.path.join(temp_dir, uploaded_file.name)
                 with open(temp_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
                 files_to_process.append((temp_path, uploaded_file.name))
         
-        # Display Progress
         my_bar = st.progress(0, text="Starting processing...")
         
         for i, (path, name) in enumerate(files_to_process):
@@ -108,14 +102,13 @@ if uploaded_files:
             percent_complete = int(((i + 1) / len(files_to_process)) * 100)
             my_bar.progress(percent_complete, text=f"Processing {name} ({i+1}/{len(files_to_process)})")
 
-    st.success("All files processed!")
+    st.success(f"Processed {len(all_extracted_data)} files!")
     st.json(all_extracted_data)
 
     # --- CELIGO INTEGRATION & LOGGING ---
     if st.button("Send All to Celigo"):
         webhook_url = "https://api.integrator.io/v1/exports/6a3e22e548c8b4a733fbeb15/KVk2DW2JtJkffDcxDfAx0o2S0mwcSyXP/data"
         log_file = "invoice_history.csv"
-        
         file_exists = os.path.isfile(log_file)
         
         with open(log_file, mode='a', newline='') as f:
@@ -135,5 +128,4 @@ if uploaded_files:
                 except Exception as e:
                     st.error(f"Error: {e}")
                     writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), item['fileName'], "N/A", "N/A", f"Error: {e}"])
-        
         st.info("Log updated: check 'invoice_history.csv' for your records.")
