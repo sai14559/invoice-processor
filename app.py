@@ -12,7 +12,6 @@ import pandas as pd
 from datetime import datetime
 
 # --- AUTH CONFIGURATION ---
-# Ensure your config.yaml file exists in the same folder
 with open('config.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
 
@@ -24,8 +23,8 @@ authenticator = stauth.Authenticate(
 )
 
 # --- LOGIN GATEKEEPER ---
-# Using keyword arguments (location='sidebar') forces the library to use the correct setting
-name, authentication_status, username = authenticator.login(location='sidebar')
+# Removed the 'location' argument to fix the TypeError
+name, authentication_status, username = authenticator.login()
 
 if authentication_status == False:
     st.error('Username/password is incorrect')
@@ -83,5 +82,5 @@ elif authentication_status:
             st.success("Data sent and logged!")
 
     st.divider()
-    # Logout button in the sidebar
-    authenticator.logout('Logout', 'sidebar')
+    # Logout button
+    authenticator.logout('Logout')
