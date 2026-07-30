@@ -10,11 +10,46 @@ import tempfile
 import pandas as pd
 from datetime import datetime
 
-# --- CONFIGURATION ---
-st.set_page_config(page_title="Bulk Invoice Parser", page_icon="📄")
-st.title("📄 Bulk Invoice Parser (Production Ready)")
+# --- CONFIGURATION & AUTH ---
+USERS = {
+    "admin": "password123",
+    "jdoe": "emp123"
+}
 
-# --- CLEANING HELPERS ---
+st.set_page_config(page_title="Vincent Cloud", page_icon="📄")
+
+def check_password():
+    """Returns True if the user has the correct password."""
+    def password_entered():
+        if st.session_state["username"] in USERS and st.session_state["password"] == USERS[st.session_state["username"]]:
+            st.session_state["password_correct"] = True
+            st.session_state["logged_in_user"] = st.session_state["username"]
+        else:
+            st.session_state["password_correct"] = False
+
+    if "password_correct" not in st.session_state:
+        st.subheader("🔒 Login to Vincent Cloud")
+        st.text_input("Username", key="username")
+        st.text_input("Password", type="password", key="password", on_change=password_entered)
+        return False
+    elif not st.session_state["password_correct"]:
+        st.subheader("🔒 Login to Vincent Cloud")
+        st.text_input("Username", key="username")
+        st.text_input("Password", type="password", key="password", on_change=password_entered)
+        st.error("😕 User or password incorrect")
+        return False
+    else:
+        return True
+
+# --- GATEKEEPER ---
+if not check_password():
+    st.stop() 
+
+# --- APP START ---
+st.title("📄 Bulk Invoice Parser")
+st.success(f"Logged in as: {st.session_state.get('logged_in_user')}")
+
+# --- HELPERS ---
 def clean_description(text, material_code):
     text = re.sub(re.escape(material_code), "", text, flags=re.IGNORECASE)
     noise = [r"COO: [A-Z]{2}", r"Customer Material:", r"\d+\s+Material:", r"Material:", r"Quantity:.*", r"Prices:.*", r"UoM", r"Rate", r"per", r"COO: US"]
@@ -31,17 +66,12 @@ def get_price_from_row(row_list):
 def process_pdf(file_path, filename):
     with pdfplumber.open(file_path) as pdf:
         full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
-        
         invoice_json = {
             "fileName": filename,
-            "fileType": "PDF",
-            "documentType": "Invoice",
             "invoiceNumber": re.search(r"Number\s*[|:]?\s*(\d+)", full_text).group(1) if re.search(r"Number\s*[|:]?\s*(\d+)", full_text) else "Not found",
-            "invoiceDate": re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text).group(1) if re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text) else "Not found",
             "totalAmount": re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text).group(1) if re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text) else "0.00",
             "items": []
         }
-        
         current_item = None
         for page in pdf.pages:
             table = page.extract_table()
@@ -49,31 +79,19 @@ def process_pdf(file_path, filename):
                 for row in table:
                     clean_row = [str(cell) for cell in row if cell is not None]
                     row_str = " ".join(clean_row)
-                    
                     material_match = re.search(r"([A-Z]{2}\d{5}|\d{8,})", row_str)
-                    
                     if material_match:
                         current_item = {
-                            "item": clean_row[0] if len(clean_row) > 0 else "N/A",
                             "material": material_match.group(0),
-                            "description": clean_description(row_str, material_match.group(0)),
-                            "quantity": "1",
-                            "uom": "PC",
-                            "publicPrice": "0.00",
-                            "discount": "0.00",
                             "subtotal": "0.00"
                         }
                         invoice_json["items"].append(current_item)
                     elif current_item:
-                        if any(label in row_str for label in ["Public price", "Net Pricelist price"]):
-                            current_item["publicPrice"] = get_price_from_row(clean_row)
-                        elif "Discount" in row_str:
-                            current_item["discount"] = get_price_from_row(clean_row)
-                        elif "Subtotal" in row_str:
+                        if "Subtotal" in row_str:
                             current_item["subtotal"] = get_price_from_row(clean_row)
     return invoice_json
 
-# --- MAIN APP ---
+# --- MAIN UI ---
 uploaded_files = st.file_uploader("Upload Invoices (PDF or ZIP)", type=["pdf", "zip"], accept_multiple_files=True)
 
 if uploaded_files:
@@ -95,63 +113,39 @@ if uploaded_files:
                     f.write(uploaded_file.getbuffer())
                 files_to_process.append((temp_path, uploaded_file.name))
         
-        my_bar = st.progress(0, text="Starting processing...")
-        
+        my_bar = st.progress(0, text="Processing...")
         for i, (path, name) in enumerate(files_to_process):
             all_extracted_data.append(process_pdf(path, name))
-            percent_complete = int(((i + 1) / len(files_to_process)) * 100)
-            my_bar.progress(percent_complete, text=f"Processing {name} ({i+1}/{len(files_to_process)})")
+            my_bar.progress(int(((i + 1) / len(files_to_process)) * 100))
 
     st.success(f"Processed {len(all_extracted_data)} files!")
 
-    # --- REVIEW TABLE ---
-    st.subheader("Batch Review")
+    # --- REVIEW & DOWNLOAD ---
     review_data = []
     for entry in all_extracted_data:
         for item in entry.get("items", []):
-            review_data.append({
-                "File": entry["fileName"],
-                "Invoice #": entry["invoiceNumber"],
-                "Material": item["material"],
-                "Total": entry["totalAmount"],
-                "Subtotal": item["subtotal"]
-            })
+            review_data.append({"File": entry["fileName"], "Invoice #": entry["invoiceNumber"], "Material": item["material"], "Subtotal": item["subtotal"]})
     
     df = pd.DataFrame(review_data)
     if not df.empty:
         st.dataframe(df)
-        st.write(f"Total items ready to send: {len(df)}")
-        
-        # --- NEW: STEP 1 DOWNLOAD BUTTON ---
         csv_data = df.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            label="📥 Download Batch Results (CSV)",
-            data=csv_data,
-            file_name='extracted_invoices.csv',
-            mime='text/csv',
-        )
-    
-    # --- CELIGO INTEGRATION & LOGGING ---
+        st.download_button("📥 Download Results (CSV)", csv_data, 'results.csv', 'text/csv')
+
+    # --- SEND ---
     if st.button("Send All to Celigo"):
         webhook_url = "https://api.integrator.io/v1/exports/6a3e22e548c8b4a733fbeb15/KVk2DW2JtJkffDcxDfAx0o2S0mwcSyXP/data"
-        log_file = "invoice_history.csv"
-        file_exists = os.path.isfile(log_file)
-        
-        with open(log_file, mode='a', newline='') as f:
-            writer = csv.writer(f)
-            if not file_exists:
-                writer.writerow(["Timestamp", "FileName", "InvoiceNumber", "TotalAmount", "Status"])
+        for item in all_extracted_data:
+            try:
+                response = requests.post(webhook_url, json=item)
+                if response.status_code in [200, 201, 202, 204]:
+                    st.write(f"✅ Sent: {item['fileName']}")
+                else:
+                    st.error(f"❌ Failed: {item['fileName']}")
+            except Exception as e:
+                st.error(f"Error: {e}")
 
-            for item in all_extracted_data:
-                try:
-                    response = requests.post(webhook_url, json=item)
-                    if response.status_code in [200, 201, 202, 204]:
-                        st.success(f"Successfully sent {item['fileName']}!")
-                        writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), item['fileName'], item['invoiceNumber'], item['totalAmount'], "Success"])
-                    else:
-                        st.error(f"Failed {item['fileName']}: {response.status_code}")
-                        writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), item['fileName'], item['invoiceNumber'], item['totalAmount'], f"Failed: {response.status_code}"])
-                except Exception as e:
-                    st.error(f"Error: {e}")
-                    writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), item['fileName'], "N/A", "N/A", f"Error: {e}"])
-        st.info("Log updated: check 'invoice_history.csv' for your records.")
+# --- SIDEBAR LOGOUT ---
+if st.sidebar.button("Logout"):
+    st.session_state["password_correct"] = False
+    st.rerun()
