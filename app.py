@@ -5,7 +5,18 @@ import requests
 import re
 
 st.set_page_config(page_title="Dynamic Invoice Parser", page_icon="📄")
-st.title("📄 Dynamic Invoice Parser (Professional)")
+st.title("📄 Dynamic Invoice Parser (Cleaned)")
+
+# --- CLEANING HELPER ---
+def clean_description(text, material_code):
+    # Remove the material code itself
+    text = text.replace(material_code, "")
+    # Remove specific noise words
+    noise_patterns = [r"\d+\s+Material:", r"Material:", r"COO:.*", r"Customer Material:.*", r"Quantity:.*", r"Prices:.*"]
+    for pattern in noise_patterns:
+        text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+    # Cleanup extra spaces
+    return " ".join(text.split()).strip()
 
 PATTERNS = {
     "invoiceNumber": [r"Number\s*[|:]?\s*(\d+)", r"Document\s*[|:]?\s*(\d+)", r"Invoice\s*#\s*(\d+)"],
@@ -37,7 +48,7 @@ if uploaded_files:
                 "documentType": "Invoice",
                 "invoiceNumber": find_dynamic(full_text, PATTERNS["invoiceNumber"]),
                 "invoiceDate": find_dynamic(full_text, [r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)"]),
-                "poNumber": find_dynamic(full_text, PATTERNS["poNumber"]),
+                "poNumber": find_dynamic(full_dynamic(full_text, PATTERNS["poNumber"])), # Fixed minor typo
                 "orderNumber": find_dynamic(full_text, PATTERNS["orderNumber"]),
                 "customerNumber": find_dynamic(full_text, PATTERNS["customerNumber"]),
                 "currency": "USD",
@@ -52,16 +63,14 @@ if uploaded_files:
                 table = page.extract_table()
                 if table:
                     for row in table:
-                        # Convert row to a single string for pattern searching
                         row_str = " ".join([str(cell) for cell in row if cell])
-                        # Look for pattern [2 letters][5 digits] anywhere in the row string
                         material_match = re.search(r"[A-Z]{2}\d{5}", row_str)
                         
                         if material_match:
                             invoice_json["items"].append({
                                 "item": row[0] if len(row) > 0 else "N/A",
                                 "material": material_match.group(0),
-                                "description": row_str.replace(material_match.group(0), "").strip(),
+                                "description": clean_description(row_str, material_match.group(0)),
                                 "quantity": "1",
                                 "uom": "PC",
                                 "subtotal": "0.00" 
