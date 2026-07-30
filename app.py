@@ -4,15 +4,15 @@ import json
 import requests
 import re
 
-st.set_page_config(page_title="Dynamic Parser", page_icon="📄")
-st.title("📄 Dynamic Parser (Multi-Format)")
+st.set_page_config(page_title="Dynamic Invoice Parser", page_icon="📄")
+st.title("📄 Dynamic Invoice Parser (Complete)")
 
-# --- CLEANING HELPERS ---
+# --- HELPERS ---
 def clean_description(text, material_code):
-    # 1. Remove the material code (case insensitive)
+    # Remove the material code (case insensitive)
     text = re.sub(re.escape(material_code), "", text, flags=re.IGNORECASE)
-    # 2. Remove specific noise patterns
-    noise = [r"COO: [A-Z]{2}", r"Customer Material:", r"\d+\s+Material:", r"Material:", r"Quantity:.*", r"Prices:.*", r"UoM", r"Rate", r"per"]
+    # Remove noise patterns
+    noise = [r"COO: [A-Z]{2}", r"Customer Material:", r"\d+\s+Material:", r"Material:", r"Quantity:.*", r"Prices:.*", r"UoM", r"Rate", r"per", r"COO: US"]
     for pattern in noise:
         text = re.sub(pattern, "", text, flags=re.IGNORECASE)
     return " ".join(text.split()).strip()
@@ -24,7 +24,7 @@ def get_price_from_row(row_list):
             return str(item).replace("USD", "").strip()
     return "0.00"
 
-# --- MAIN PARSING LOGIC ---
+# --- MAIN APP ---
 uploaded_files = st.file_uploader("Upload Invoices", type="pdf", accept_multiple_files=True)
 
 if uploaded_files:
@@ -34,7 +34,7 @@ if uploaded_files:
         with pdfplumber.open(uploaded_file) as pdf:
             full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
             
-            # --- EXTRACTING HEADER DATA ---
+            # --- EXTRACT HEADER DATA ---
             invoice_json = {
                 "fileName": uploaded_file.name,
                 "fileType": "PDF",
@@ -55,8 +55,7 @@ if uploaded_files:
                         clean_row = [str(cell) for cell in row if cell is not None]
                         row_str = " ".join(clean_row)
                         
-                        # DYNAMIC MATERIAL MATCH: Handles both [Letter][Letter][Digit][Digit][Digit]... or [Digit][Digit]...
-                        # This looks for either 2 letters+5 digits OR just 8+ digits
+                        # Identify Material Row (Handles alphanumeric VF-style or numeric codes)
                         material_match = re.search(r"([A-Z]{2}\d{5}|\d{8,})", row_str)
                         
                         if material_match:
@@ -72,7 +71,7 @@ if uploaded_files:
                             }
                             invoice_json["items"].append(current_item)
                         
-                        # 2. Identify Price Rows
+                        # Identify Price Rows based on labels
                         elif current_item:
                             if "Public price" in row_str:
                                 current_item["publicPrice"] = get_price_from_row(clean_row)
@@ -83,4 +82,18 @@ if uploaded_files:
 
             all_extracted_data.append(invoice_json)
 
+    # Display JSON result
     st.json(all_extracted_data)
+
+    # --- CELIGO INTEGRATION BUTTON ---
+    if st.button("Send All to Celigo"):
+        webhook_url = "https://api.integrator.io/v1/exports/6a3e22e548c8b4a733fbeb15/KVk2DW2JtJkffDcxDfAx0o2S0mwcSyXP/data"
+        for item in all_extracted_data:
+            try:
+                response = requests.post(webhook_url, json=item)
+                if response.status_code in [200, 201, 202, 204]:
+                    st.success(f"Successfully sent {item['fileName']}!")
+                else:
+                    st.error(f"Failed {item['fileName']}: {response.status_code}")
+            except Exception as e:
+                st.error(f"Error: {e}")
