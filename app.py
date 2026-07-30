@@ -23,22 +23,20 @@ if uploaded_files:
                     full_text += text + "\n"
 
         # --- EXCLUSION LOGIC ---
-        # We replace the excluded sections with an empty string
-        # (?s) makes the dot (.) match newlines, enabling multi-line deletion
         clean_text = re.sub(r"Bill-to address:.*?(?=Ship-to address:)", "", full_text, flags=re.DOTALL | re.IGNORECASE)
         clean_text = re.sub(r"Conditions:.*?(?=Text:)", "", clean_text, flags=re.DOTALL | re.IGNORECASE)
 
-        # 1. Extract Summary Data (using the cleaned text)
-        inv_num_match = re.search(r"Number\s+(\d+)", clean_text)
-        date_match = re.search(r"Date\s+([A-Za-z]+\s+\d+,\s+\d+)", clean_text)
-        total_match = re.search(r"Total amount:\s+([\d.]+)", clean_text)
+        # 1. Extract Summary Data (Updated to handle | symbols)
+        # We look for Number, then optional whitespace/pipes, then the digits
+        inv_num_match = re.search(r"Number\s*[|]?\s*(\d+)", clean_text)
+        date_match = re.search(r"Date\s*[|]?\s*([A-Za-z]+\s+\d+,\s+\d+)", clean_text)
+        total_match = re.search(r"Total amount:\s*[|]?\s*([\d.]+)", clean_text)
 
         # 2. Extract Line Items
         items = re.findall(r"Material:\s+(.*?)(?:\s*COO:|Customer Material:)", clean_text, re.IGNORECASE)
         cleaned_items = [item.strip() for item in items]
 
-        # 3. Capture Everything Else (What is left of the text)
-        # We strip the text to remove leading/trailing whitespace
+        # 3. Capture Everything Else
         remaining_content = clean_text.strip()
 
         data = {
@@ -47,7 +45,7 @@ if uploaded_files:
             "date": date_match.group(1) if date_match else "Not found",
             "total_amount": total_match.group(1) if total_match else "Not found",
             "line_items": cleaned_items,
-            "additional_details": remaining_content # Contains everything else
+            "additional_details": remaining_content
         }
         all_extracted_data.append(data)
 
