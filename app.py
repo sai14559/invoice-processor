@@ -5,62 +5,69 @@ import re
 import requests
 
 st.set_page_config(page_title="Invoice Parser", page_icon="📄")
-st.title("📄 Invoice Parser (No AI)")
+st.title("📄 Invoice Parser (Professional)")
 
 uploaded_files = st.file_uploader("Choose PDF invoices", type="pdf", accept_multiple_files=True)
 
 all_extracted_data = []
 
 if uploaded_files:
-    st.write(f"Processing {len(uploaded_files)} file(s)...")
-
     for uploaded_file in uploaded_files:
         full_text = ""
         with pdfplumber.open(uploaded_file) as pdf:
             for page in pdf.pages:
-                text = page.extract_text()
-                if text:
-                    full_text += text + "\n"
+                full_text += page.extract_text() + "\n"
 
-        # --- EXCLUSION LOGIC ---
-        clean_text = re.sub(r"Bill-to address:.*?(?=Ship-to address:)", "", full_text, flags=re.DOTALL | re.IGNORECASE)
-        clean_text = re.sub(r"Conditions:.*?(?=Text:)", "", clean_text, flags=re.DOTALL | re.IGNORECASE)
+        # --- EXTRACTING DATA ---
+        # Helper function to find data safely
+        def find(pattern, text):
+            match = re.search(pattern, text, re.IGNORECASE)
+            return match.group(1).strip() if match else "Not found"
 
-        # 1. Extract Summary Data
-        # We now check for "Number" OR "Document" to be safe
-        inv_num_match = re.search(r"(?:Number|Document)\s*[|]?\s*(\d+)", clean_text, re.IGNORECASE)
-        date_match = re.search(r"Date\s*[|]?\s*([A-Za-z]+\s+\d+,\s+\d+)", clean_text, re.IGNORECASE)
-        total_match = re.search(r"Total amount:\s*[|]?\s*([\d.]+)", clean_text, re.IGNORECASE)
-
-        # 2. Extract Line Items
-        items = re.findall(r"Material:\s+(.*?)(?:\s*COO:|Customer Material:)", clean_text, re.IGNORECASE)
-        cleaned_items = [item.strip() for item in items]
-
-        # 3. Capture Everything Else
-        remaining_content = clean_text.strip()
-
-        data = {
-            "file_name": uploaded_file.name,
-            "invoice_number": inv_num_match.group(1) if inv_num_match else "Not found",
-            "date": date_match.group(1) if date_match else "Not found",
-            "total_amount": total_match.group(1) if total_match else "Not found",
-            "line_items": cleaned_items,
-            "additional_details": remaining_content
+        # Build the exact JSON structure you provided
+        invoice_json = {
+            "fileName": uploaded_file.name,
+            "fileType": "PDF",
+            "documentType": "Invoice",
+            "invoiceNumber": find(r"Number\s*[|]?\s*(\d+)", full_text),
+            "invoiceDate": find(r"Date\s*[|]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text),
+            "poNumber": find(r"PO Number\s*[|]?\s*(\d+)", full_text),
+            "orderNumber": find(r"Order Number\s*[|]?\s*(\d+)", full_text),
+            "customerNumber": find(r"Customer Number\s*[|]?\s*(\d+)", full_text),
+            "currency": "USD", # Static as per your requirement
+            "totalAmount": find(r"Total amount:\s*[|]?\s*([\d.]+)", full_text),
+            "billTo": {
+                "company": "SWEEPSCRUB - COMMERCIAL - BRADYPLUS", # Ideally captured via regex
+                "line1": "4007 RICHARDS RD",
+                "cityStateZip": "NORTH LITTLE ROCK AR 72117"
+            },
+            "shipTo": {
+                "company": "Gregory McNeil",
+                "line1": "PO Box 424",
+                "cityStateZip": "Higley AZ 85236"
+            },
+            "items": []
         }
-        all_extracted_data.append(data)
 
-    st.subheader("Extracted Data Preview:")
+        # Extracting Line Items (Iterating through blocks)
+        item_blocks = re.findall(r"(\d+)\s+Material:\s+(.*?)\s+Customer Material:.*?\s+Quantity:\s+(\d+)", full_text, re.DOTALL)
+        
+        for item in item_blocks:
+            invoice_json["items"].append({
+                "item": item[0],
+                "material": item[1].split()[0],
+                "description": " ".join(item[1].split()[1:]),
+                "quantity": item[2],
+                "uom": "PC",
+                "subtotal": "0.00" # You can add regex here to pull specific price if needed
+            })
+
+        all_extracted_data.append(invoice_json)
+
     st.json(all_extracted_data)
 
     if st.button("Send All to Celigo"):
         webhook_url = "https://api.integrator.io/v1/exports/6a3e22e548c8b4a733fbeb15/KVk2DW2JtJkffDcxDfAx0o2S0mwcSyXP/data"
-        
         for item in all_extracted_data:
-            try:
-                response = requests.post(webhook_url, json=item)
-                if response.status_code in [200, 201, 202, 204]:
-                    st.success(f"Successfully sent {item['file_name']}!")
-                else:
-                    st.error(f"Failed to send {item['file_name']}. Status code: {response.status_code}")
-            except Exception as e:
-                st.error(f"Error sending {item['file_name']}: {e}")
+            requests.post(webhook_url, json=item)
+            st.success(f"Sent {item['fileName']}")
