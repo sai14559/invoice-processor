@@ -5,19 +5,20 @@ import requests
 import re
 
 st.set_page_config(page_title="Dynamic Invoice Parser", page_icon="📄")
-st.title("📄 Dynamic Invoice Parser (Professional)")
+st.title("📄 Dynamic Invoice Parser (Fixed)")
 
 # --- CLEANING HELPERS ---
 def extract_money(text, label):
-    # This looks for the label (e.g., 'Discount') and grabs the number immediately following it
+    # re.DOTALL allows the search to cross line breaks
+    # This pattern looks for the label, skips any characters (including newlines), and grabs the first number found
     pattern = rf"{label}.*?(-?[\d]+\.[\d]+)"
-    match = re.search(pattern, text, re.IGNORECASE)
+    match = re.search(pattern, text, re.IGNORECASE | re.DOTALL)
     return match.group(1) if match else "0.00"
 
 def clean_description(text, material_code):
     text = text.replace(material_code, "")
-    # Remove noise and specific "Customer" leftovers
-    noise_patterns = [r"\d+\s+Material:", r"Material:", r"COO:.*", r"Customer Material:.*", r"Customer", r"Quantity:.*", r"Prices:.*"]
+    # Remove noise words including specific leftovers from your provided PDF
+    noise_patterns = [r"\d+\s+Material:", r"Material:", r"COO:.*", r"Customer Material:.*", r"Customer", r"Quantity:.*", r"Prices:.*", r"UoM", r"Rate", r"per"]
     for pattern in noise_patterns:
         text = re.sub(pattern, "", text, flags=re.IGNORECASE)
     return " ".join(text.split()).strip()
@@ -44,6 +45,7 @@ all_extracted_data = []
 if uploaded_files:
     for uploaded_file in uploaded_files:
         with pdfplumber.open(uploaded_file) as pdf:
+            # Join pages for full text search, but keep tables for item parsing
             full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
             
             invoice_json = {
@@ -62,12 +64,13 @@ if uploaded_files:
                 "items": []
             }
             
-            # --- TABLE EXTRACTION WITH PRICE PARSING ---
+            # --- TABLE EXTRACTION ---
             for page in pdf.pages:
                 table = page.extract_table()
                 if table:
                     for row in table:
                         row_str = " ".join([str(cell) for cell in row if cell])
+                        # This regex identifies the material codes (e.g., VF90103) as they appear in your PDF
                         material_match = re.search(r"[A-Z]{2}\d{5}", row_str)
                         
                         if material_match:
