@@ -1,5 +1,6 @@
 streamlit
+streamlit-authenticator==0.2.3
+pyyaml
 pdfplumber
 requests
-streamlit-authenticator
-pyyaml
+pandas
