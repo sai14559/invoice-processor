@@ -5,7 +5,7 @@ import requests
 import re
 
 st.set_page_config(page_title="Dynamic Parser", page_icon="📄")
-st.title("📄 Dynamic Parser (Cleaned)")
+st.title("📄 Dynamic Parser (Multi-Format)")
 
 # --- CLEANING HELPERS ---
 def clean_description(text, material_code):
@@ -15,7 +15,6 @@ def clean_description(text, material_code):
     noise = [r"COO: [A-Z]{2}", r"Customer Material:", r"\d+\s+Material:", r"Material:", r"Quantity:.*", r"Prices:.*", r"UoM", r"Rate", r"per"]
     for pattern in noise:
         text = re.sub(pattern, "", text, flags=re.IGNORECASE)
-    # 3. Final cleanup: remove extra spaces and any leading/trailing delimiters
     return " ".join(text.split()).strip()
 
 def get_price_from_row(row_list):
@@ -39,7 +38,7 @@ if uploaded_files:
             invoice_json = {
                 "fileName": uploaded_file.name,
                 "fileType": "PDF",
-                "documentType": "Invoice", # Hardcoded based on your usage, or use re.search if varied
+                "documentType": "Invoice",
                 "invoiceNumber": re.search(r"Number\s*[|:]?\s*(\d+)", full_text).group(1) if re.search(r"Number\s*[|:]?\s*(\d+)", full_text) else "Not found",
                 "invoiceDate": re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text).group(1) if re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text) else "Not found",
                 "totalAmount": re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text).group(1) if re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text) else "0.00",
@@ -56,8 +55,10 @@ if uploaded_files:
                         clean_row = [str(cell) for cell in row if cell is not None]
                         row_str = " ".join(clean_row)
                         
-                        # 1. Identify Material Row
-                        material_match = re.search(r"[A-Z]{2}\d{5}", row_str)
+                        # DYNAMIC MATERIAL MATCH: Handles both [Letter][Letter][Digit][Digit][Digit]... or [Digit][Digit]...
+                        # This looks for either 2 letters+5 digits OR just 8+ digits
+                        material_match = re.search(r"([A-Z]{2}\d{5}|\d{8,})", row_str)
+                        
                         if material_match:
                             current_item = {
                                 "item": clean_row[0] if len(clean_row) > 0 else "N/A",
