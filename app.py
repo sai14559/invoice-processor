@@ -5,13 +5,13 @@ import requests
 import re
 
 st.set_page_config(page_title="Dynamic Invoice Parser", page_icon="📄")
-st.title("📄 Dynamic Invoice Parser (Complete)")
+st.title("📄 Dynamic Invoice Parser (Final Version)")
 
-# --- HELPERS ---
+# --- CLEANING HELPERS ---
 def clean_description(text, material_code):
     # Remove the material code (case insensitive)
     text = re.sub(re.escape(material_code), "", text, flags=re.IGNORECASE)
-    # Remove noise patterns
+    # Remove noise patterns found in various Nilfisk invoices
     noise = [r"COO: [A-Z]{2}", r"Customer Material:", r"\d+\s+Material:", r"Material:", r"Quantity:.*", r"Prices:.*", r"UoM", r"Rate", r"per", r"COO: US"]
     for pattern in noise:
         text = re.sub(pattern, "", text, flags=re.IGNORECASE)
@@ -55,7 +55,7 @@ if uploaded_files:
                         clean_row = [str(cell) for cell in row if cell is not None]
                         row_str = " ".join(clean_row)
                         
-                        # Identify Material Row (Handles alphanumeric VF-style or numeric codes)
+                        # Identify Material Row: Matches VF-style (2 letters + 5 digits) OR purely numeric (8+ digits)
                         material_match = re.search(r"([A-Z]{2}\d{5}|\d{8,})", row_str)
                         
                         if material_match:
@@ -73,7 +73,8 @@ if uploaded_files:
                         
                         # Identify Price Rows based on labels
                         elif current_item:
-                            if "Public price" in row_str:
+                            # Handle different labels for public price (e.g., Public price vs Net Pricelist price)
+                            if any(label in row_str for label in ["Public price", "Net Pricelist price"]):
                                 current_item["publicPrice"] = get_price_from_row(clean_row)
                             elif "Discount" in row_str:
                                 current_item["discount"] = get_price_from_row(clean_row)
