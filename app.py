@@ -21,8 +21,13 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-# --- LOGIN GATEKEEPER ---
-name, authentication_status, username = authenticator.login('Login', 'main')
+# --- LOGIN GATEKEEPER WITH ERROR HANDLING ---
+# The try/except block catches the KeyError caused by old browser cookies
+try:
+    name, authentication_status, username = authenticator.login('Login', 'main')
+except KeyError:
+    st.error("Session issue detected. Please clear your browser cookies for this site and refresh.")
+    st.stop()
 
 if authentication_status == False:
     st.error('Username/password is incorrect')
