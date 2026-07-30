@@ -1,14 +1,17 @@
 credentials:
   usernames:
     admin:
-      email: admin@vincentcloud.com
-      name: Admin User
-      password: 'password123'
-    employee1:
-      email: emp1@vincentcloud.com
-      name: Employee One
-      password: 'emp123'
+      email: admin@example.com
+      name: Admin
+      password: password123
+    jdoe:
+      email: jdoe@example.com
+      name: J Doe
+      password: emp123
 cookie:
   expiry_days: 30
-  key: vincent_cloud_key
+  key: random_signature_key_123
   name: vincent_cloud_cookie
+preauthorized:
+  emails:
+  - ''
