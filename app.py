@@ -13,6 +13,7 @@ import pandas as pd
 from datetime import datetime
 
 # --- AUTH CONFIGURATION ---
+# Ensure your config.yaml file exists in the same folder
 with open('config.yaml') as file:
     config = yaml.load(file, Loader=SafeLoader)
 
@@ -23,8 +24,9 @@ authenticator = stauth.Authenticate(
     config['cookie']['expiry_days']
 )
 
-# --- LOGIN GATEKEEPER ---
-name, authentication_status, username = authenticator.login('Login', 'main')
+# --- LOGIN GATEKEEPER (Fixed Location) ---
+# 'sidebar' puts the login box on the side, creating a dashboard feel
+name, authentication_status, username = authenticator.login('Login', 'sidebar')
 
 if authentication_status == False:
     st.error('Username/password is incorrect')
@@ -46,10 +48,6 @@ elif authentication_status:
         st.divider()
 
     # --- INVOICE PARSING LOGIC ---
-    def clean_description(text, material_code):
-        text = re.sub(re.escape(material_code), "", text, flags=re.IGNORECASE)
-        return " ".join(text.split()).strip()
-
     def process_pdf(file_path, filename):
         with pdfplumber.open(file_path) as pdf:
             full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
@@ -67,7 +65,6 @@ elif authentication_status:
         all_extracted_data = []
         with tempfile.TemporaryDirectory() as temp_dir:
             for uploaded_file in uploaded_files:
-                # [Simplified processing logic for brevity]
                 temp_path = os.path.join(temp_dir, uploaded_file.name)
                 with open(temp_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
@@ -83,10 +80,11 @@ elif authentication_status:
                     writer.writerow(["Timestamp", "User", "FileName", "InvoiceNumber", "TotalAmount", "Status"])
                 
                 for item in all_extracted_data:
-                    # Log the name of the user who is logged in
+                    # Logs the currently logged-in user's name
                     writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), name, item['fileName'], item['invoiceNumber'], item['totalAmount'], "Sent"])
             
             st.success("Data sent and logged!")
 
     st.divider()
-    authenticator.logout('Logout', 'main')
+    # Logout button in the sidebar
+    authenticator.logout('Logout', 'sidebar')
