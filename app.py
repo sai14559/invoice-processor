@@ -26,11 +26,11 @@ if uploaded_files:
         clean_text = re.sub(r"Bill-to address:.*?(?=Ship-to address:)", "", full_text, flags=re.DOTALL | re.IGNORECASE)
         clean_text = re.sub(r"Conditions:.*?(?=Text:)", "", clean_text, flags=re.DOTALL | re.IGNORECASE)
 
-        # 1. Extract Summary Data (Updated to handle | symbols)
-        # We look for Number, then optional whitespace/pipes, then the digits
-        inv_num_match = re.search(r"Number\s*[|]?\s*(\d+)", clean_text)
-        date_match = re.search(r"Date\s*[|]?\s*([A-Za-z]+\s+\d+,\s+\d+)", clean_text)
-        total_match = re.search(r"Total amount:\s*[|]?\s*([\d.]+)", clean_text)
+        # 1. Extract Summary Data
+        # We now check for "Number" OR "Document" to be safe
+        inv_num_match = re.search(r"(?:Number|Document)\s*[|]?\s*(\d+)", clean_text, re.IGNORECASE)
+        date_match = re.search(r"Date\s*[|]?\s*([A-Za-z]+\s+\d+,\s+\d+)", clean_text, re.IGNORECASE)
+        total_match = re.search(r"Total amount:\s*[|]?\s*([\d.]+)", clean_text, re.IGNORECASE)
 
         # 2. Extract Line Items
         items = re.findall(r"Material:\s+(.*?)(?:\s*COO:|Customer Material:)", clean_text, re.IGNORECASE)
