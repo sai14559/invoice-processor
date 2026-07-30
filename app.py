@@ -7,6 +7,7 @@ import csv
 import os
 import zipfile
 import tempfile
+import pandas as pd
 from datetime import datetime
 
 # --- CONFIGURATION ---
@@ -84,7 +85,6 @@ if uploaded_files:
             if uploaded_file.name.endswith(".zip"):
                 with zipfile.ZipFile(uploaded_file, 'r') as zip_ref:
                     zip_ref.extractall(temp_dir)
-                    # RECURSIVE SEARCH: Looks in all subfolders
                     for root, dirs, files in os.walk(temp_dir):
                         for file_name in files:
                             if file_name.lower().endswith(".pdf"):
@@ -103,8 +103,25 @@ if uploaded_files:
             my_bar.progress(percent_complete, text=f"Processing {name} ({i+1}/{len(files_to_process)})")
 
     st.success(f"Processed {len(all_extracted_data)} files!")
-    st.json(all_extracted_data)
 
+    # --- REVIEW TABLE ---
+    st.subheader("Batch Review")
+    review_data = []
+    for entry in all_extracted_data:
+        for item in entry.get("items", []):
+            review_data.append({
+                "File": entry["fileName"],
+                "Invoice #": entry["invoiceNumber"],
+                "Material": item["material"],
+                "Total": entry["totalAmount"],
+                "Subtotal": item["subtotal"]
+            })
+    
+    df = pd.DataFrame(review_data)
+    if not df.empty:
+        st.dataframe(df)
+        st.write(f"Total items ready to send: {len(df)}")
+    
     # --- CELIGO INTEGRATION & LOGGING ---
     if st.button("Send All to Celigo"):
         webhook_url = "https://api.integrator.io/v1/exports/6a3e22e548c8b4a733fbeb15/KVk2DW2JtJkffDcxDfAx0o2S0mwcSyXP/data"
