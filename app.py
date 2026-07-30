@@ -22,8 +22,8 @@ authenticator = stauth.Authenticate(
 )
 
 # --- LOGIN GATEKEEPER ---
-# Using positional arguments ('Login', 'main') removes the TypeError
-name, authentication_status, username = authenticator.login('Login', 'main')
+# We have removed all arguments to see if the default behavior works for your version
+name, authentication_status, username = authenticator.login()
 
 if authentication_status == False:
     st.error('Username/password is incorrect')
@@ -82,4 +82,4 @@ elif authentication_status:
 
     st.divider()
     # Logout button
-    authenticator.logout('Logout', 'main')
+    authenticator.logout()
