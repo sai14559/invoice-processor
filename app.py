@@ -5,17 +5,21 @@ import requests
 import re
 
 st.set_page_config(page_title="Dynamic Invoice Parser", page_icon="📄")
-st.title("📄 Dynamic Invoice Parser (Cleaned)")
+st.title("📄 Dynamic Invoice Parser (Professional)")
 
-# --- CLEANING HELPER ---
+# --- CLEANING HELPERS ---
+def extract_money(text, label):
+    # This looks for the label (e.g., 'Discount') and grabs the number immediately following it
+    pattern = rf"{label}.*?(-?[\d]+\.[\d]+)"
+    match = re.search(pattern, text, re.IGNORECASE)
+    return match.group(1) if match else "0.00"
+
 def clean_description(text, material_code):
-    # Remove the material code itself
     text = text.replace(material_code, "")
-    # Remove specific noise words
-    noise_patterns = [r"\d+\s+Material:", r"Material:", r"COO:.*", r"Customer Material:.*", r"Quantity:.*", r"Prices:.*"]
+    # Remove noise and specific "Customer" leftovers
+    noise_patterns = [r"\d+\s+Material:", r"Material:", r"COO:.*", r"Customer Material:.*", r"Customer", r"Quantity:.*", r"Prices:.*"]
     for pattern in noise_patterns:
         text = re.sub(pattern, "", text, flags=re.IGNORECASE)
-    # Cleanup extra spaces
     return " ".join(text.split()).strip()
 
 PATTERNS = {
@@ -58,7 +62,7 @@ if uploaded_files:
                 "items": []
             }
             
-            # --- TABLE EXTRACTION ---
+            # --- TABLE EXTRACTION WITH PRICE PARSING ---
             for page in pdf.pages:
                 table = page.extract_table()
                 if table:
@@ -73,7 +77,9 @@ if uploaded_files:
                                 "description": clean_description(row_str, material_match.group(0)),
                                 "quantity": "1",
                                 "uom": "PC",
-                                "subtotal": "0.00" 
+                                "publicPrice": extract_money(row_str, "Public price"),
+                                "discount": extract_money(row_str, "Discount"),
+                                "subtotal": extract_money(row_str, "Subtotal")
                             })
             
             all_extracted_data.append(invoice_json)
