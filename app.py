@@ -3,7 +3,6 @@ import streamlit_authenticator as stauth
 import yaml
 from yaml.loader import SafeLoader
 import pdfplumber
-import requests
 import re
 import csv
 import os
@@ -23,8 +22,8 @@ authenticator = stauth.Authenticate(
 )
 
 # --- LOGIN GATEKEEPER ---
-# Providing 'Login' and 'main' satisfies the requirements of the library version
-name, authentication_status, username = authenticator.login('Login', 'main')
+# Using location='main' tells the library exactly where to render the widget
+name, authentication_status, username = authenticator.login(location='main')
 
 if authentication_status == False:
     st.error('Username/password is incorrect')
@@ -83,4 +82,4 @@ elif authentication_status:
 
     st.divider()
     # Logout button
-    authenticator.logout('Logout', 'main')
+    authenticator.logout('Logout', location='main')
