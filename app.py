@@ -4,7 +4,7 @@ import json
 import re
 import requests
 
-st.set_page_config(page_title="Invoice Parser", page_icon="📄")
+st.set_page_config(page_title="Multi-Invoice Parser", page_icon="📄")
 st.title("📄 Multi-Invoice Parser (No AI)")
 
 uploaded_files = st.file_uploader("Choose PDF invoices", type="pdf", accept_multiple_files=True)
@@ -27,28 +27,34 @@ if uploaded_files:
         date_match = re.search(r"Date\s+([A-Za-z]+\s+\d+,\s+\d+)", full_text)
         total_match = re.search(r"Total amount:\s+([\d.]+)", full_text)
 
-        # 2. Extract Line Items (Finds all materials)
-        # This looks for patterns starting with "Material:" and ending with "COO:"
-        items = re.findall(r"Material:\s+(.*?)\s+COO:", full_text)
+        # 2. Extract Line Items (Updated Regex)
+        # This now captures text between "Material:" and either "COO:" or "Customer Material:"
+        # It handles cases where spaces might be missing before "COO:"
+        items = re.findall(r"Material:\s+(.*?)(?:\s*COO:|Customer Material:)", full_text, re.IGNORECASE)
+
+        # Clean up each item: remove extra whitespace and newlines
+        cleaned_items = [item.strip() for item in items]
 
         data = {
             "file_name": uploaded_file.name,
             "invoice_number": inv_num_match.group(1) if inv_num_match else "Not found",
             "date": date_match.group(1) if date_match else "Not found",
             "total_amount": total_match.group(1) if total_match else "Not found",
-            "line_items": items  # This captures all items found
+            "line_items": cleaned_items
         }
         all_extracted_data.append(data)
 
     st.subheader("Extracted Data Preview:")
     st.json(all_extracted_data)
 
+    # The "Send" Button
     if st.button("Send All to Celigo"):
         webhook_url = "https://api.integrator.io/v1/exports/6a3e22e548c8b4a733fbeb15/KVk2DW2JtJkffDcxDfAx0o2S0mwcSyXP/data"
         
         for item in all_extracted_data:
             try:
                 response = requests.post(webhook_url, json=item)
+                # Success codes
                 if response.status_code in [200, 201, 202, 204]:
                     st.success(f"Successfully sent {item['file_name']}!")
                 else:
