@@ -23,8 +23,8 @@ authenticator = stauth.Authenticate(
 )
 
 # --- LOGIN GATEKEEPER ---
-# Removed the 'location' argument to fix the TypeError
-name, authentication_status, username = authenticator.login()
+# Providing 'Login' and 'main' satisfies the requirements of the library version
+name, authentication_status, username = authenticator.login('Login', 'main')
 
 if authentication_status == False:
     st.error('Username/password is incorrect')
@@ -83,4 +83,4 @@ elif authentication_status:
 
     st.divider()
     # Logout button
-    authenticator.logout('Logout')
+    authenticator.logout('Logout', 'main')
