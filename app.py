@@ -7,7 +7,6 @@ import re
 st.set_page_config(page_title="Dynamic Invoice Parser", page_icon="📄")
 st.title("📄 Dynamic Invoice Parser (Professional)")
 
-# --- CONFIGURATION: Add new aliases here if formats change ---
 PATTERNS = {
     "invoiceNumber": [r"Number\s*[|:]?\s*(\d+)", r"Document\s*[|:]?\s*(\d+)", r"Invoice\s*#\s*(\d+)"],
     "poNumber": [r"PO Number\s*[|:]?\s*(\d+)", r"Purchase Order\s*[:|]?\s*(\d+)", r"PO#\s*(\d+)"],
@@ -32,7 +31,6 @@ if uploaded_files:
         with pdfplumber.open(uploaded_file) as pdf:
             full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
             
-            # --- 1. DYNAMIC HEADER EXTRACTION ---
             invoice_json = {
                 "fileName": uploaded_file.name,
                 "fileType": "PDF",
@@ -49,22 +47,24 @@ if uploaded_files:
                 "items": []
             }
             
-            # --- 2. DYNAMIC TABLE EXTRACTION ---
+            # --- IMPROVED TABLE EXTRACTION ---
             for page in pdf.pages:
                 table = page.extract_table()
                 if table:
                     for row in table:
-                        # Logic: Look for rows that contain a Material code (e.g., VF...)
+                        # Convert row to a single string for pattern searching
                         row_str = " ".join([str(cell) for cell in row if cell])
-                        if any(re.match(r"[A-Z]{2}\d{5}", str(cell)) for cell in row if cell):
-                            # This maps the table grid to your JSON structure
+                        # Look for pattern [2 letters][5 digits] anywhere in the row string
+                        material_match = re.search(r"[A-Z]{2}\d{5}", row_str)
+                        
+                        if material_match:
                             invoice_json["items"].append({
                                 "item": row[0] if len(row) > 0 else "N/A",
-                                "material": next((str(cell) for cell in row if re.match(r"[A-Z]{2}\d{5}", str(cell))), "N/A"),
-                                "description": row[1] if len(row) > 1 else "N/A",
+                                "material": material_match.group(0),
+                                "description": row_str.replace(material_match.group(0), "").strip(),
                                 "quantity": "1",
                                 "uom": "PC",
-                                "subtotal": row[-1] if len(row) > 0 else "0.00"
+                                "subtotal": "0.00" 
                             })
             
             all_extracted_data.append(invoice_json)
