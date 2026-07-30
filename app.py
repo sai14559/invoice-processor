@@ -22,8 +22,8 @@ authenticator = stauth.Authenticate(
 )
 
 # --- LOGIN GATEKEEPER ---
-# Using location='main' tells the library exactly where to render the widget
-name, authentication_status, username = authenticator.login(location='main')
+# Using positional arguments ('Login', 'main') removes the TypeError
+name, authentication_status, username = authenticator.login('Login', 'main')
 
 if authentication_status == False:
     st.error('Username/password is incorrect')
@@ -82,4 +82,4 @@ elif authentication_status:
 
     st.divider()
     # Logout button
-    authenticator.logout('Logout', location='main')
+    authenticator.logout('Logout', 'main')
