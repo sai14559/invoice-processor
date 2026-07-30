@@ -5,10 +5,13 @@ import requests
 import re
 import csv
 import os
+import zipfile
+import tempfile
 from datetime import datetime
 
-st.set_page_config(page_title="Dynamic Invoice Parser", page_icon="📄")
-st.title("📄 Dynamic Invoice Parser (Production Ready)")
+# --- CONFIGURATION ---
+st.set_page_config(page_title="Bulk Invoice Parser", page_icon="📄")
+st.title("📄 Bulk Invoice Parser (Production Ready)")
 
 # --- CLEANING HELPERS ---
 def clean_description(text, material_code):
@@ -21,72 +24,91 @@ def clean_description(text, material_code):
     return " ".join(text.split()).strip()
 
 def get_price_from_row(row_list):
-    # Searches from right-to-left to grab the first valid number found (the price)
+    # Searches from right-to-left to grab the first valid number found
     for item in reversed(row_list):
         if item and re.search(r"[-+]?\d*\.\d+|\d+", str(item)):
             return str(item).replace("USD", "").strip()
     return "0.00"
 
+def process_pdf(file_path, filename):
+    """Processes a single PDF file and returns the JSON data."""
+    with pdfplumber.open(file_path) as pdf:
+        full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
+        
+        invoice_json = {
+            "fileName": filename,
+            "fileType": "PDF",
+            "documentType": "Invoice",
+            "invoiceNumber": re.search(r"Number\s*[|:]?\s*(\d+)", full_text).group(1) if re.search(r"Number\s*[|:]?\s*(\d+)", full_text) else "Not found",
+            "invoiceDate": re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text).group(1) if re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text) else "Not found",
+            "totalAmount": re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text).group(1) if re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text) else "0.00",
+            "items": []
+        }
+        
+        current_item = None
+        for page in pdf.pages:
+            table = page.extract_table()
+            if table:
+                for row in table:
+                    clean_row = [str(cell) for cell in row if cell is not None]
+                    row_str = " ".join(clean_row)
+                    
+                    # Match Material Codes: VF-style or numeric
+                    material_match = re.search(r"([A-Z]{2}\d{5}|\d{8,})", row_str)
+                    
+                    if material_match:
+                        current_item = {
+                            "item": clean_row[0] if len(clean_row) > 0 else "N/A",
+                            "material": material_match.group(0),
+                            "description": clean_description(row_str, material_match.group(0)),
+                            "quantity": "1",
+                            "uom": "PC",
+                            "publicPrice": "0.00",
+                            "discount": "0.00",
+                            "subtotal": "0.00"
+                        }
+                        invoice_json["items"].append(current_item)
+                    elif current_item:
+                        # Handle varied labels for pricing
+                        if any(label in row_str for label in ["Public price", "Net Pricelist price"]):
+                            current_item["publicPrice"] = get_price_from_row(clean_row)
+                        elif "Discount" in row_str:
+                            current_item["discount"] = get_price_from_row(clean_row)
+                        elif "Subtotal" in row_str:
+                            current_item["subtotal"] = get_price_from_row(clean_row)
+    return invoice_json
+
 # --- MAIN APP ---
-uploaded_files = st.file_uploader("Upload Invoices", type="pdf", accept_multiple_files=True)
+uploaded_files = st.file_uploader("Upload Invoices (PDF or ZIP)", type=["pdf", "zip"], accept_multiple_files=True)
 
 if uploaded_files:
     all_extracted_data = []
+    files_to_process = []
     
-    for uploaded_file in uploaded_files:
-        with pdfplumber.open(uploaded_file) as pdf:
-            full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
-            
-            # --- EXTRACT HEADER DATA ---
-            invoice_json = {
-                "fileName": uploaded_file.name,
-                "fileType": "PDF",
-                "documentType": "Invoice",
-                "invoiceNumber": re.search(r"Number\s*[|:]?\s*(\d+)", full_text).group(1) if re.search(r"Number\s*[|:]?\s*(\d+)", full_text) else "Not found",
-                "invoiceDate": re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text).group(1) if re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text) else "Not found",
-                "totalAmount": re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text).group(1) if re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text) else "0.00",
-                "items": []
-            }
-            
-            current_item = None
-            
-            # --- POSITIONAL TABLE EXTRACTION ---
-            for page in pdf.pages:
-                table = page.extract_table()
-                if table:
-                    for row in table:
-                        clean_row = [str(cell) for cell in row if cell is not None]
-                        row_str = " ".join(clean_row)
-                        
-                        # Identify Material Row (Handles alphanumeric VF-style or numeric codes)
-                        material_match = re.search(r"([A-Z]{2}\d{5}|\d{8,})", row_str)
-                        
-                        if material_match:
-                            current_item = {
-                                "item": clean_row[0] if len(clean_row) > 0 else "N/A",
-                                "material": material_match.group(0),
-                                "description": clean_description(row_str, material_match.group(0)),
-                                "quantity": "1",
-                                "uom": "PC",
-                                "publicPrice": "0.00",
-                                "discount": "0.00",
-                                "subtotal": "0.00"
-                            }
-                            invoice_json["items"].append(current_item)
-                        
-                        # Identify Price Rows
-                        elif current_item:
-                            # We now check for 'Public price' OR 'Net Pricelist price'
-                            if any(label in row_str for label in ["Public price", "Net Pricelist price"]):
-                                current_item["publicPrice"] = get_price_from_row(clean_row)
-                            elif "Discount" in row_str:
-                                current_item["discount"] = get_price_from_row(clean_row)
-                            elif "Subtotal" in row_str:
-                                current_item["subtotal"] = get_price_from_row(clean_row)
+    # Process files and ZIP contents
+    with tempfile.TemporaryDirectory() as temp_dir:
+        for uploaded_file in uploaded_files:
+            if uploaded_file.name.endswith(".zip"):
+                with zipfile.ZipFile(uploaded_file, 'r') as zip_ref:
+                    zip_ref.extractall(temp_dir)
+                    for file_name in os.listdir(temp_dir):
+                        if file_name.endswith(".pdf"):
+                            files_to_process.append((os.path.join(temp_dir, file_name), file_name))
+            else:
+                temp_path = os.path.join(temp_dir, uploaded_file.name)
+                with open(temp_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                files_to_process.append((temp_path, uploaded_file.name))
+        
+        # Display Progress
+        my_bar = st.progress(0, text="Starting processing...")
+        
+        for i, (path, name) in enumerate(files_to_process):
+            all_extracted_data.append(process_pdf(path, name))
+            percent_complete = int(((i + 1) / len(files_to_process)) * 100)
+            my_bar.progress(percent_complete, text=f"Processing {name} ({i+1}/{len(files_to_process)})")
 
-            all_extracted_data.append(invoice_json)
-
-    # Display JSON result
+    st.success("All files processed!")
     st.json(all_extracted_data)
 
     # --- CELIGO INTEGRATION & LOGGING ---
