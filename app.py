@@ -121,6 +121,15 @@ if uploaded_files:
     if not df.empty:
         st.dataframe(df)
         st.write(f"Total items ready to send: {len(df)}")
+        
+        # --- NEW: STEP 1 DOWNLOAD BUTTON ---
+        csv_data = df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Download Batch Results (CSV)",
+            data=csv_data,
+            file_name='extracted_invoices.csv',
+            mime='text/csv',
+        )
     
     # --- CELIGO INTEGRATION & LOGGING ---
     if st.button("Send All to Celigo"):
