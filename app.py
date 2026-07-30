@@ -22,8 +22,7 @@ authenticator = stauth.Authenticate(
 )
 
 # --- LOGIN GATEKEEPER ---
-# We have removed all arguments to see if the default behavior works for your version
-name, authentication_status, username = authenticator.login()
+name, authentication_status, username = authenticator.login('Login', 'main')
 
 if authentication_status == False:
     st.error('Username/password is incorrect')
@@ -82,4 +81,4 @@ elif authentication_status:
 
     st.divider()
     # Logout button
-    authenticator.logout()
+    authenticator.logout('Logout', 'main')
