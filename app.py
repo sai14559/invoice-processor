@@ -4,22 +4,22 @@ import json
 import requests
 import re
 
-st.set_page_config(page_title="Dynamic Invoice Parser", page_icon="📄")
-st.title("📄 Dynamic Invoice Parser (Positional Logic)")
+st.set_page_config(page_title="Dynamic Parser", page_icon="📄")
+st.title("📄 Dynamic Parser (Cleaned)")
 
 # --- CLEANING HELPERS ---
-def clean_description(text):
-    # Removes standard invoice noise found in your PDF
-    noise = [r"\d+\s+Material:", r"Material:", r"COO:.*", r"Customer Material:.*", r"Customer", r"Quantity:.*", r"Prices:.*", r"UoM", r"Rate", r"per"]
+def clean_description(text, material_code):
+    # 1. Remove the material code (case insensitive)
+    text = re.sub(re.escape(material_code), "", text, flags=re.IGNORECASE)
+    # 2. Remove specific noise patterns
+    noise = [r"COO: [A-Z]{2}", r"Customer Material:", r"\d+\s+Material:", r"Material:", r"Quantity:.*", r"Prices:.*", r"UoM", r"Rate", r"per"]
     for pattern in noise:
         text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+    # 3. Final cleanup: remove extra spaces and any leading/trailing delimiters
     return " ".join(text.split()).strip()
 
 def get_price_from_row(row_list):
-    """
-    Looks for the last numeric value in a row to capture prices.
-    This is the 'math' approach to find the price regardless of column index.
-    """
+    # Searches from right-to-left to grab the first valid number found (the price)
     for item in reversed(row_list):
         if item and re.search(r"[-+]?\d*\.\d+|\d+", str(item)):
             return str(item).replace("USD", "").strip()
@@ -35,10 +35,13 @@ if uploaded_files:
         with pdfplumber.open(uploaded_file) as pdf:
             full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
             
-            # Header Extraction
+            # --- EXTRACTING HEADER DATA ---
             invoice_json = {
                 "fileName": uploaded_file.name,
+                "fileType": "PDF",
+                "documentType": "Invoice", # Hardcoded based on your usage, or use re.search if varied
                 "invoiceNumber": re.search(r"Number\s*[|:]?\s*(\d+)", full_text).group(1) if re.search(r"Number\s*[|:]?\s*(\d+)", full_text) else "Not found",
+                "invoiceDate": re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text).group(1) if re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text) else "Not found",
                 "totalAmount": re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text).group(1) if re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text) else "0.00",
                 "items": []
             }
@@ -50,7 +53,6 @@ if uploaded_files:
                 table = page.extract_table()
                 if table:
                     for row in table:
-                        # Clean row of None values
                         clean_row = [str(cell) for cell in row if cell is not None]
                         row_str = " ".join(clean_row)
                         
@@ -60,7 +62,7 @@ if uploaded_files:
                             current_item = {
                                 "item": clean_row[0] if len(clean_row) > 0 else "N/A",
                                 "material": material_match.group(0),
-                                "description": clean_description(row_str),
+                                "description": clean_description(row_str, material_match.group(0)),
                                 "quantity": "1",
                                 "uom": "PC",
                                 "publicPrice": "0.00",
@@ -69,7 +71,7 @@ if uploaded_files:
                             }
                             invoice_json["items"].append(current_item)
                         
-                        # 2. Identify Price Rows and update the current_item
+                        # 2. Identify Price Rows
                         elif current_item:
                             if "Public price" in row_str:
                                 current_item["publicPrice"] = get_price_from_row(clean_row)
@@ -81,9 +83,3 @@ if uploaded_files:
             all_extracted_data.append(invoice_json)
 
     st.json(all_extracted_data)
-
-    if st.button("Send All to Celigo"):
-        webhook_url = "https://api.integrator.io/v1/exports/6a3e22e548c8b4a733fbeb15/KVk2DW2JtJkffDcxDfAx0o2S0mwcSyXP/data"
-        for item in all_extracted_data:
-            requests.post(webhook_url, json=item)
-            st.success(f"Sent {item['fileName']}")
