@@ -7,57 +7,7 @@ import tempfile
 import pandas as pd
 from datetime import datetime
 
-# --- CONFIGURATION ---
-# Define your users here (Username: Password)
-USERS = {
-    "admin": "password123",
-    "jdoe": "emp123"
-}
-
-# --- CUSTOM AUTHENTICATION SYSTEM ---
-def check_password():
-    """Returns True if the user has the correct password."""
-    def password_entered():
-        if st.session_state["username"] in USERS and st.session_state["password"] == USERS[st.session_state["username"]]:
-            st.session_state["password_correct"] = True
-            st.session_state["logged_in_user"] = st.session_state["username"]
-        else:
-            st.session_state["password_correct"] = False
-
-    if "password_correct" not in st.session_state:
-        # First run, show inputs
-        st.text_input("Username", key="username")
-        st.text_input("Password", type="password", key="password", on_change=password_entered)
-        return False
-    elif not st.session_state["password_correct"]:
-        # Wrong password
-        st.text_input("Username", key="username")
-        st.text_input("Password", type="password", key="password", on_change=password_entered)
-        st.error("😕 User not known or password incorrect")
-        return False
-    else:
-        # Password correct
-        return True
-
-# --- APP START ---
 st.title("📄 Vincent Cloud")
-
-if not check_password():
-    st.stop()  # Do not show the rest of the app until logged in
-
-# --- APP LOGIC (Only visible after login) ---
-name = st.session_state["logged_in_user"]
-st.write(f'Welcome *{name}*')
-
-# --- ADMIN DASHBOARD ---
-if name == 'admin':
-    st.subheader("Admin: Employee Activity Log")
-    if os.path.exists("invoice_history.csv"):
-        df_history = pd.read_csv("invoice_history.csv")
-        st.dataframe(df_history)
-    else:
-        st.info("No activity logs found yet.")
-    st.divider()
 
 # --- INVOICE PARSING LOGIC ---
 def process_pdf(file_path, filename):
@@ -81,7 +31,7 @@ if uploaded_files:
                 f.write(uploaded_file.getbuffer())
             all_extracted_data.append(process_pdf(temp_path, uploaded_file.name))
 
-    # --- SEND TO CELIGO & LOG ---
+    # --- LOGGING ---
     if st.button("Send to Celigo"):
         log_file = "invoice_history.csv"
         file_exists = os.path.isfile(log_file)
@@ -91,11 +41,6 @@ if uploaded_files:
                 writer.writerow(["Timestamp", "User", "FileName", "InvoiceNumber", "TotalAmount", "Status"])
             
             for item in all_extracted_data:
-                writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), name, item['fileName'], item['invoiceNumber'], item['totalAmount'], "Sent"])
+                writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "Anonymous", item['fileName'], item['invoiceNumber'], item['totalAmount'], "Sent"])
         
         st.success("Data sent and logged!")
-
-# Logout Button
-if st.button("Logout"):
-    st.session_state["password_correct"] = False
-    st.rerun()
