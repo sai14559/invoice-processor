@@ -48,7 +48,7 @@ if uploaded_files:
                 "documentType": "Invoice",
                 "invoiceNumber": find_dynamic(full_text, PATTERNS["invoiceNumber"]),
                 "invoiceDate": find_dynamic(full_text, [r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)"]),
-                "poNumber": find_dynamic(full_dynamic(full_text, PATTERNS["poNumber"])), # Fixed minor typo
+                "poNumber": find_dynamic(full_text, PATTERNS["poNumber"]),
                 "orderNumber": find_dynamic(full_text, PATTERNS["orderNumber"]),
                 "customerNumber": find_dynamic(full_text, PATTERNS["customerNumber"]),
                 "currency": "USD",
@@ -58,7 +58,7 @@ if uploaded_files:
                 "items": []
             }
             
-            # --- IMPROVED TABLE EXTRACTION ---
+            # --- TABLE EXTRACTION ---
             for page in pdf.pages:
                 table = page.extract_table()
                 if table:
