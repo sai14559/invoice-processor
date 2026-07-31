@@ -6,7 +6,6 @@ import os
 import zipfile
 import tempfile
 import pandas as pd
-from datetime import datetime
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Vincent Cloud", page_icon="☁️", layout="wide")
@@ -36,7 +35,6 @@ def get_price_from_row(row_list):
 def process_pdf(file_path, filename):
     with pdfplumber.open(file_path) as pdf:
         full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
-
         invoice_json = {
             "fileName": filename,
             "invoiceNumber": re.search(r"Number\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE).group(1) if re.search(r"Number\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE) else "Not found",
@@ -44,11 +42,9 @@ def process_pdf(file_path, filename):
             "orderNumber": re.search(r"Order\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"Order\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
             "customerNumber": re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
             "invoiceDate": re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text, re.IGNORECASE).group(1) if re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text, re.IGNORECASE) else "Not found",
-            # Handles negative values and optional pipes/colons
             "totalAmount": re.search(r"(?:Final amount|Total amount)\s*[|:]?\s*(-?[\d.]+)", full_text, re.IGNORECASE).group(1) if re.search(r"(?:Final amount|Total amount)\s*[|:]?\s*(-?[\d.]+)", full_text, re.IGNORECASE) else "0.00",
             "items": []
         }
-
         current_item = None
         for page in pdf.pages:
             table = page.extract_table()
@@ -56,11 +52,8 @@ def process_pdf(file_path, filename):
                 for row in table:
                     clean_row = [str(cell) for cell in row if cell is not None]
                     row_str = " ".join(clean_row)
-
-                    # Strict material regex: Requires letters followed by numbers to avoid invoice # capture
                     material_match = re.search(r"([A-Z]{2,}\d{2,}[A-Z\d]*)", row_str)
                     coo_match = re.search(r"(?:COO|Country of Origin)\s*[:\s]*([A-Z]{2})", row_str, re.IGNORECASE)
-
                     if material_match:
                         current_item = {
                             "item": clean_row[0] if len(clean_row) > 0 else "N/A",
@@ -82,15 +75,13 @@ def process_pdf(file_path, filename):
                             current_item["subtotal"] = get_price_from_row(clean_row)
     return invoice_json
 
-# --- APP PAGES ---
+# --- PAGES ---
 def login_page():
     st.image("https://media.licdn.com/dms/image/v2/D4D0BAQFJviu2NEE-Sw/company-logo_200_200/company-logo_200_200/0/1667374445161/vincent_clouds_logo?e=2147483647&v=beta&t=Jhv9ka9lcSdISkUbqyYaQ36SesJSXP0Br7xNAeEoR_k", width=150)
     st.title("Login to Vincent Cloud")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
-    
     if st.button("Login"):
-        # Credentials set per request
         if username == "VincentCloud" and password == "Vincent@123":
             st.session_state['show_welcome'] = True
             st.rerun()
@@ -99,12 +90,13 @@ def login_page():
 
 def welcome_page():
     st.balloons()
-    st.image("https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExNHJ4dG5qZzR4dG5qZzR4dG5qZzR4dG5qZzR4dG5qZzR4dG5qJmVwPXYxX2ludGVybmFsX2dpZl9ieV9pZCZjdD1n/3o7TKMGpxxHOGTdzJC/giphy.gif", width=300)
-    st.success("Welcome to Vincent Cloud!")
-    if st.button("Enter Dashboard"):
-        st.session_state['authenticated'] = True
-        st.session_state['show_welcome'] = False
-        st.rerun()
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        st.markdown("<h1 style='text-align: center; color: #0E76A8;'>Welcome to Vincent Cloud!</h1>", unsafe_allow_html=True)
+        if st.button("🚀 Enter Dashboard", type="primary", use_container_width=True):
+            st.session_state['authenticated'] = True
+            st.session_state['show_welcome'] = False
+            st.rerun()
 
 def main_dashboard():
     st.image("https://media.licdn.com/dms/image/v2/D4D0BAQFJviu2NEE-Sw/company-logo_200_200/company-logo_200_200/0/1667374445161/vincent_clouds_logo?e=2147483647&v=beta&t=Jhv9ka9lcSdISkUbqyYaQ36SesJSXP0Br7xNAeEoR_k", width=100)
@@ -112,30 +104,43 @@ def main_dashboard():
     
     uploaded_files = st.file_uploader("Upload Invoices (PDF or ZIP)", type=["pdf", "zip"], accept_multiple_files=True)
     
-    if uploaded_files and st.button("Process Files"):
-        all_data = []
-        files_to_process = []
-        with tempfile.TemporaryDirectory() as temp_dir:
-            for uploaded_file in uploaded_files:
-                if uploaded_file.name.endswith(".zip"):
-                    with zipfile.ZipFile(uploaded_file, 'r') as zip_ref:
-                        zip_ref.extractall(temp_dir)
-                        for root, dirs, files in os.walk(temp_dir):
-                            for file_name in files:
-                                if file_name.lower().endswith(".pdf"):
-                                    files_to_process.append((os.path.join(root, file_name), file_name))
-                else:
-                    temp_path = os.path.join(temp_dir, uploaded_file.name)
-                    with open(temp_path, "wb") as f:
-                        f.write(uploaded_file.getbuffer())
-                    files_to_process.append((temp_path, uploaded_file.name))
-            
-            for path, name in files_to_process:
-                all_data.append(process_pdf(path, name))
-        
-        st.session_state['all_extracted_data'] = all_data
+    # Buttons row at the top
+    c1, c2, c3 = st.columns([1, 1, 1])
+    with c1:
+        if st.button("Process Files", type="primary", use_container_width=True):
+            if uploaded_files:
+                all_data = []
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    for uploaded_file in uploaded_files:
+                        if uploaded_file.name.endswith(".zip"):
+                            with zipfile.ZipFile(uploaded_file, 'r') as zip_ref:
+                                zip_ref.extractall(temp_dir)
+                                for root, dirs, files in os.walk(temp_dir):
+                                    for file_name in files:
+                                        if file_name.lower().endswith(".pdf"):
+                                            all_data.append(process_pdf(os.path.join(root, file_name), file_name))
+                        else:
+                            temp_path = os.path.join(temp_dir, uploaded_file.name)
+                            with open(temp_path, "wb") as f:
+                                f.write(uploaded_file.getbuffer())
+                            all_data.append(process_pdf(temp_path, uploaded_file.name))
+                st.session_state['all_extracted_data'] = all_data
 
-    # Display results if available
+    with c2:
+        if st.session_state['all_extracted_data']:
+            if st.button("📤 Send to Celigo", type="secondary", use_container_width=True):
+                webhook_url = "https://api.integrator.io/v1/exports/6a3e22e548c8b4a733fbeb15/KVk2DW2JtJkffDcxDfAx0o2S0mwcSyXP/data"
+                with st.spinner("Sending..."):
+                    for item in st.session_state['all_extracted_data']:
+                        requests.post(webhook_url, json=item)
+                    st.success("Sent successfully!")
+
+    with c3:
+        if st.button("❌ Clear All", use_container_width=True):
+            st.session_state['all_extracted_data'] = None
+            st.rerun()
+
+    # Table Display
     if st.session_state['all_extracted_data']:
         st.subheader("Batch Review")
         review_data = []
@@ -150,11 +155,6 @@ def main_dashboard():
                     "Total": entry["totalAmount"]
                 })
         st.dataframe(pd.DataFrame(review_data))
-
-        # Clear All functionality
-        if st.button("Clear All"):
-            st.session_state['all_extracted_data'] = None
-            st.rerun()
 
 # --- CONTROL FLOW ---
 if not st.session_state['authenticated'] and not st.session_state['show_welcome']:
