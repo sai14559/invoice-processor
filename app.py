@@ -114,9 +114,15 @@ if uploaded_files:
             review_data.append({
                 "File": entry["fileName"],
                 "Invoice #": entry["invoiceNumber"],
+                "Date": entry["invoiceDate"],
                 "Material": item["material"],
-                "Total": entry["totalAmount"],
-                "Subtotal": item["subtotal"]
+                "Description": item["description"],
+                "Qty": item["quantity"],
+                "UoM": item["uom"],
+                "Public Price": item["publicPrice"],
+                "Discount": item["discount"],
+                "Subtotal": item["subtotal"],
+                "Total": entry["totalAmount"]
             })
     
     df = pd.DataFrame(review_data)
