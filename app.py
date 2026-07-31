@@ -182,7 +182,7 @@ def main_dashboard():
 
         # --- CELIGO INTEGRATION ---
         if st.button("Send All to Celigo"):
-            webhook_url = "https://api.integrator.io/v1/exports/6a3e22e548c8b4a733fbeb15/KVk2DW2JtJkffDcxDfAx0o2S0mwcSyXP/data"
+            webhook_url = "https://api.integrator.io/v1/exports/6a6c7f1a71b45a8a6d19a25f/inWc7Qgr53a80JoSIB2P3Yf9yzb6c71J/data"
             with st.spinner("Sending..."):
                 for item in all_extracted_data:
                     try:
