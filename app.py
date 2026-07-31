@@ -83,6 +83,10 @@ def main_dashboard():
                     for row in table:
                         clean_row = [str(cell) for cell in row if cell is not None]
                         row_str = " ".join(clean_row)
+                        
+                        # --- EXCLUSION FILTER ---
+                        if "Original Invoice" in row_str:
+                            continue
 
                         # Regex: Looks for 5+ digit numeric or alphanumeric codes
                         material_match = re.search(r"(\d{5,}|[A-Z]{2,}\d{2,}[A-Z\d]*)", row_str)
