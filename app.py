@@ -1,106 +1,147 @@
-import re
-import pdfplumber
 import streamlit as st
-import pandas as pd
-import zipfile
-import io
+import pdfplumber
+import json
 import requests
+import re
+import csv
+import os
+import zipfile
+import tempfile
+import pandas as pd
+from datetime import datetime
 
-# --- Configuration ---
-st.set_page_config(page_title="Invoice Processor", layout="wide")
+# --- CONFIGURATION ---
+st.set_page_config(page_title="Vincent Cloud", page_icon="☁️", layout="wide")
+st.image("https://media.licdn.com/dms/image/v2/D4D0BAQFJviu2NEE-Sw/company-logo_200_200/company-logo_200_200/0/1667374445161/vincent_clouds_logo?e=2147483647&v=beta&t=Jhv9ka9lcSdISkUbqyYaQ36SesJSXP0Br7xNAeEoR_k", width=150)
+st.title("📄 Vincent Cloud (Nilfisk Invoice Parser)")
 
-if 'extracted_data' not in st.session_state:
-    st.session_state.extracted_data = None
+# --- CLEANING HELPERS ---
+def clean_description(text, material_code):
+    text = re.sub(re.escape(material_code), "", text, flags=re.IGNORECASE)
+    noise = [r"COO: [A-Z]{2}", r"Customer Material:", r"\d+\s+Material:", r"Material:", r"Quantity:.*", r"Prices:.*", r"UoM", r"Rate", r"per", r"COO: US"]
+    for pattern in noise:
+        text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+    return " ".join(text.split()).strip()
 
-# --- UI Header ---
-try:
-    st.image("logo.jfif.jfif", width=200)
-except:
-    pass
+def get_price_from_row(row_list):
+    for item in reversed(row_list):
+        if item and re.search(r"[-+]?\d*\.\d+|\d+", str(item)):
+            return str(item).replace("USD", "").replace("$", "").replace(",", "").strip()
+    return "0.00"
 
-st.title("Bulk Invoice Processor & Celigo Sync")
+def process_pdf(file_path, filename):
+    with pdfplumber.open(file_path) as pdf:
+        full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
 
-# --- Helper Functions ---
-def find_field(text, patterns, default="N/A"):
-    for pattern in patterns:
-        match = re.search(pattern, text, re.IGNORECASE)
-        if match:
-            return match.group(1).strip()
-    return default
+        # Header level extraction
+        invoice_json = {
+            "fileName": filename,
+            "invoiceNumber": re.search(r"Number\s*[|:]?\s*(\w+)", full_text).group(1) if re.search(r"Number\s*[|:]?\s*(\w+)", full_text) else "Not found",
+            "poNumber": re.search(r"PO\s*Number\s*[|:]?\s*([\w-]+)", full_text).group(1) if re.search(r"PO\s*Number\s*[|:]?\s*([\w-]+)", full_text) else "Not found",
+            "orderNumber": re.search(r"Order\s*Number\s*[|:]?\s*([\w-]+)", full_text).group(1) if re.search(r"Order\s*Number\s*[|:]?\s*([\w-]+)", full_text) else "Not found",
+            "customerNumber": re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text).group(1) if re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text) else "Not found",
+            "date": re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text).group(1) if re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text) else "Not found",
+            "totalAmount": re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text).group(1) if re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text) else "0.00",
+            "items": []
+        }
 
-def process_pdf_content(file_bytes, filename):
-    try:
-        with pdfplumber.open(file_bytes) as pdf:
-            # We join the first 2 pages to get header/footer info
-            full_text = "\n".join([page.extract_text() for page in pdf.pages[:2] if page.extract_text()])
-            
-            # --- EXTRACTING FIELDS ---
-            order_number = find_field(full_text, [r"(?:Order\s*Number|Order\s*#)\s*[:\s]*([\w-]+)"])
-            customer_number = find_field(full_text, [r"(?:Customer\s*Number|Account\s*#)\s*[:\s]*([\w-]+)"])
-            description = find_field(full_text, [r"(?:Description)\s*[:\s]*(.*)"])
-            coo = find_field(full_text, [r"(?:COO|Country\s*of\s*Origin)\s*[:\s]*([\w\s]+)"])
-            material = find_field(full_text, [r"(?:Material)\s*[:\s]*([\w-]+)"])
-            item = find_field(full_text, [r"(?:Item)\s*[:\s]*([\w-]+)"])
-            quantity = find_field(full_text, [r"(?:Quantity|Qty)\s*[:\s]*([\d]+)"])
-            public_price = find_field(full_text, [r"(?:Public\s*Price)\s*[:\s]*\$?\s*([\d,]+\.\d{2})"])
-            discount = find_field(full_text, [r"(?:Discount)\s*[:\s]*([\d]+%)"])
-            subtotal = find_field(full_text, [r"(?:Subtotal)\s*[:\s]*\$?\s*([\d,]+\.\d{2})"], default="0.00")
-            total_amount = find_field(full_text, [
-                r"(?:Total\s*Amount|Grand\s*Total|Total)\s*[:\s]*\$?\s*([\d,]+\.\d{2})"
-            ], default="0.00")
-            date = find_field(full_text, [r"(?:Date)\s*[:\s]*\s*([\d\/\-\.]{8,10})"])
-            
-            return {
-                "File Name": filename,
-                "Order Number": order_number,
-                "Customer Number": customer_number,
-                "Description": description,
-                "COO": coo,
-                "Material": material,
-                "Item": item,
-                "Quantity": quantity,
-                "Public Price": public_price.replace(",", ""),
-                "Discount": discount,
-                "Subtotal": subtotal.replace(",", ""),
-                "Total Amount": total_amount.replace(",", ""),
-                "Date": date
-            }
-    except Exception as e:
-        return {"File Name": filename, "Error": f"Extraction Failed: {str(e)}"}
+        current_item = None
+        for page in pdf.pages:
+            table = page.extract_table()
+            if table:
+                for row in table:
+                    clean_row = [str(cell) for cell in row if cell is not None]
+                    row_str = " ".join(clean_row)
 
-# --- Step 1: Processing ---
-uploaded_files = st.file_uploader("Upload PDF or ZIP files", type=["pdf", "zip"], accept_multiple_files=True)
+                    material_match = re.search(r"([A-Z]{2}\d{5}|\d{8,})", row_str)
+                    coo_match = re.search(r"(?:COO|Country of Origin)\s*[:\s]*([A-Z]{2})", row_str, re.IGNORECASE)
 
-if uploaded_files and st.button("Step 1: Process Files"):
-    all_data = []
-    with st.spinner("Extracting data..."):
+                    if material_match:
+                        current_item = {
+                            "item": clean_row[0] if len(clean_row) > 0 else "N/A",
+                            "material": material_match.group(0),
+                            "description": clean_description(row_str, material_match.group(0)),
+                            "coo": coo_match.group(1) if coo_match else "N/A",
+                            "quantity": "1",
+                            "publicPrice": "0.00",
+                            "discount": "0.00",
+                            "subtotal": "0.00"
+                        }
+                        invoice_json["items"].append(current_item)
+                    elif current_item:
+                        if any(label in row_str for label in ["Public price", "Net Pricelist price"]):
+                            current_item["publicPrice"] = get_price_from_row(clean_row)
+                        elif "Discount" in row_str:
+                            current_item["discount"] = get_price_from_row(clean_row)
+                        elif "Subtotal" in row_str:
+                            current_item["subtotal"] = get_price_from_row(clean_row)
+                            
+    return invoice_json
+
+# --- MAIN APP ---
+uploaded_files = st.file_uploader("Upload Invoices (PDF or ZIP)", type=["pdf", "zip"], accept_multiple_files=True)
+
+if uploaded_files:
+    all_extracted_data = []
+    files_to_process = []
+
+    with tempfile.TemporaryDirectory() as temp_dir:
         for uploaded_file in uploaded_files:
             if uploaded_file.name.endswith(".zip"):
                 with zipfile.ZipFile(uploaded_file, 'r') as zip_ref:
-                    for name in zip_ref.namelist():
-                        if name.lower().endswith(".pdf"):
-                            pdf_bytes = io.BytesIO(zip_ref.read(name))
-                            all_data.append(process_pdf_content(pdf_bytes, name))
+                    zip_ref.extractall(temp_dir)
+                    for root, dirs, files in os.walk(temp_dir):
+                        for file_name in files:
+                            if file_name.lower().endswith(".pdf"):
+                                files_to_process.append((os.path.join(root, file_name), file_name))
             else:
-                all_data.append(process_pdf_content(uploaded_file, uploaded_file.name))
-    
-    st.session_state.extracted_data = all_data
-    st.rerun()
+                temp_path = os.path.join(temp_dir, uploaded_file.name)
+                with open(temp_path, "wb") as f:
+                    f.write(uploaded_file.getbuffer())
+                files_to_process.append((temp_path, uploaded_file.name))
 
-# --- Step 2: Display & Send ---
-if st.session_state.extracted_data:
-    st.subheader("Extracted Data Preview")
-    df = pd.DataFrame(st.session_state.extracted_data)
-    st.table(df)
-    
-    if st.button("Step 2: Send to Celigo"):
+        my_bar = st.progress(0, text="Starting processing...")
+        for i, (path, name) in enumerate(files_to_process):
+            all_extracted_data.append(process_pdf(path, name))
+            my_bar.progress(int(((i + 1) / len(files_to_process)) * 100), text=f"Processing {name}")
+
+    st.success(f"Processed {len(all_extracted_data)} files!")
+
+    # --- REVIEW TABLE ---
+    st.subheader("Batch Review")
+    review_data = []
+    for entry in all_extracted_data:
+        for item in entry.get("items", []):
+            review_data.append({
+                "File": entry["fileName"],
+                "Date": entry["date"],
+                "Order #": entry["orderNumber"],
+                "Cust #": entry["customerNumber"],
+                "Material": item["material"],
+                "Item": item["item"],
+                "Description": item["description"],
+                "COO": item["coo"],
+                "Qty": item["quantity"],
+                "Public Price": item["publicPrice"],
+                "Discount": item["discount"],
+                "Subtotal": item["subtotal"],
+                "Total Amount": entry["totalAmount"]
+            })
+
+    df = pd.DataFrame(review_data)
+    if not df.empty:
+        st.dataframe(df)
+
+    # --- CELIGO INTEGRATION ---
+    if st.button("Send All to Celigo"):
         webhook_url = "https://api.integrator.io/v1/exports/6a3e22e548c8b4a733fbeb15/KVk2DW2JtJkffDcxDfAx0o2S0mwcSyXP/data"
-        with st.spinner("Sending to Celigo..."):
-            try:
-                response = requests.post(webhook_url, json=st.session_state.extracted_data)
-                if response.status_code in [200, 202, 204]:
-                    st.success("Successfully sent all data to Celigo!")
-                else:
-                    st.error(f"Failed. Status Code: {response.status_code}")
-            except Exception as e:
-                st.error(f"Error: {e}")
+        with st.spinner("Sending..."):
+            for item in all_extracted_data:
+                try:
+                    response = requests.post(webhook_url, json=item)
+                    if response.status_code in [200, 201, 202, 204]:
+                        st.success(f"Sent {item['fileName']} successfully")
+                    else:
+                        st.error(f"Failed {item['fileName']}: {response.status_code}")
+                except Exception as e:
+                    st.error(f"Error sending {item['fileName']}: {e}")
