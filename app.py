@@ -12,37 +12,37 @@ from datetime import datetime
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Vincent Cloud", page_icon="☁️", layout="wide")
 
-# --- SESSION STATE INITIALIZATION ---
-if 'logged_in' not in st.session_state:
-    st.session_state.logged_in = False
-if 'welcome_seen' not in st.session_state:
-    st.session_state.welcome_seen = False
+# --- AUTHENTICATION STATE ---
+if 'authenticated' not in st.session_state:
+    st.session_state['authenticated'] = False
+if 'welcome_completed' not in st.session_state:
+    st.session_state['welcome_completed'] = False
 
-# --- UI COMPONENTS ---
-
-def login_ui():
+# --- LOGIN PAGE ---
+def login_screen():
     st.image("https://media.licdn.com/dms/image/v2/D4D0BAQFJviu2NEE-Sw/company-logo_200_200/company-logo_200_200/0/1667374445161/vincent_clouds_logo?e=2147483647&v=beta&t=Jhv9ka9lcSdISkUbqyYaQ36SesJSXP0Br7xNAeEoR_k", width=150)
     st.title("Login to Vincent Cloud")
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
-    
     if st.button("Login"):
-        # Simple hardcoded credentials - update as needed
-        if username == "admin" and password == "admin": 
-            st.session_state.logged_in = True
+        # You can set your custom credentials here
+        if username == "admin" and password == "Vincent@123":
+            st.session_state['authenticated'] = True
             st.rerun()
         else:
             st.error("Invalid username or password")
 
-def welcome_ui():
+# --- WELCOME PAGE ---
+def welcome_screen():
+    st.balloons()
     st.title("Welcome to Vincent Cloud!")
-    st.write("You are now authenticated. Click the button below to access the Invoice Parser.")
-    if st.button("Go to Dashboard"):
-        st.session_state.welcome_seen = True
+    st.subheader("You have successfully logged in.")
+    if st.button("Enter Dashboard"):
+        st.session_state['welcome_completed'] = True
         st.rerun()
 
-def main_app():
-    # --- YOUR ORIGINAL LOGIC ---
+# --- MAIN DASHBOARD (YOUR ORIGINAL CODE) ---
+def main_dashboard():
     st.image("https://media.licdn.com/dms/image/v2/D4D0BAQFJviu2NEE-Sw/company-logo_200_200/company-logo_200_200/0/1667374445161/vincent_clouds_logo?e=2147483647&v=beta&t=Jhv9ka9lcSdISkUbqyYaQ36SesJSXP0Br7xNAeEoR_k", width=150)
     st.title("📄 Vincent Cloud (Nilfisk Invoice Parser)")
 
@@ -106,7 +106,6 @@ def main_app():
                                 current_item["subtotal"] = get_price_from_row(clean_row)
         return invoice_json
 
-    # --- MAIN APP ---
     uploaded_files = st.file_uploader("Upload Invoices (PDF or ZIP)", type=["pdf", "zip"], accept_multiple_files=True)
     if uploaded_files:
         all_extracted_data = []
@@ -132,6 +131,7 @@ def main_app():
                 my_bar.progress(int(((i + 1) / len(files_to_process)) * 100), text=f"Processing {name}")
 
         st.success(f"Processed {len(all_extracted_data)} files!")
+
         st.subheader("Batch Review")
         review_data = []
         for entry in all_extracted_data:
@@ -151,6 +151,7 @@ def main_app():
                     "Subtotal": item["subtotal"],
                     "Total": entry["totalAmount"]
                 })
+
         df = pd.DataFrame(review_data)
         if not df.empty:
             st.dataframe(df)
@@ -168,10 +169,10 @@ def main_app():
                     except Exception as e:
                         st.error(f"Error sending {item['fileName']}: {e}")
 
-# --- APP FLOW ---
-if not st.session_state.logged_in:
-    login_ui()
-elif not st.session_state.welcome_seen:
-    welcome_ui()
+# --- APP NAVIGATION FLOW ---
+if not st.session_state['authenticated']:
+    login_screen()
+elif not st.session_state['welcome_completed']:
+    welcome_screen()
 else:
-    main_app()
+    main_dashboard()
