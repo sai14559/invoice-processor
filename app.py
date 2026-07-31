@@ -31,18 +31,21 @@ def find_field(text, patterns, default="N/A"):
 def process_pdf_content(file_bytes, filename):
     try:
         with pdfplumber.open(file_bytes) as pdf:
-            full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
-            
-            # --- EXTRACTING ALL FIELDS (EXCLUDING CONDITIONS & BILL TO) ---
+            # We join the first 2 pages to get header/footer info
+            full_text = "\n".join([page.extract_text() for page in pdf.pages[:2] if page.extract_text()])
             
             # 1. Invoice & PO Numbers
             invoice_num = find_field(full_text, [r"(?:Invoice|Credit Note|Document)\s*Number\s*[|:]?\s*([\w-]+)", r"Number\s*[|:]?\s*([\w-]+)"])
-            po_num = find_field(full_text, [r"PO\s*Number\s*[|:]?\s*([\w-]+)", r"Purchase Order\s*[|:]?\s*([\w-]+)"])
+            po_num = find_field(full_text, [r"PO\s*Number\s*[|:]?\s*([\w-]+)", r"Purchase Order\s*[|:]?\s*([\w-]+)", r"Order\s*#\s*([\w-]+)"])
             
             # 2. Dates
             date = find_field(full_text, [r"(?:Date|Invoice Date)\s*[:\s]*\s*([\d\/\-\.]{8,10})"])
+            due_date = find_field(full_text, [r"(?:Due Date)\s*[:\s]*\s*([\d\/\-\.]{8,10})"])
             
-            # 3. Financials
+            # 3. Vendor (Often at the top)
+            vendor_name = find_field(full_text, [r"(?:Vendor|From)\s*[:\s]*(.*)"])
+            
+            # 4. Financials
             subtotal = find_field(full_text, [r"(?:Subtotal|Net Amount)\s*[:\s]*\$?\s*([\d,]+\.\d{2})"], default="0.00")
             tax = find_field(full_text, [r"(?:Tax|VAT|GST)\s*[:\s]*\$?\s*([\d,]+\.\d{2})"], default="0.00")
             total = find_field(full_text, [
@@ -52,9 +55,11 @@ def process_pdf_content(file_bytes, filename):
             
             return {
                 "File Name": filename,
+                "Vendor": vendor_name,
                 "Invoice Number": invoice_num,
                 "PO Number": po_num,
                 "Invoice Date": date,
+                "Due Date": due_date,
                 "Subtotal": subtotal.replace(",", ""),
                 "Tax": tax.replace(",", ""),
                 "Total Amount": total.replace(",", "")
