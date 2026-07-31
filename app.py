@@ -3,7 +3,6 @@ import pdfplumber
 import json
 import requests
 import re
-import csv
 import os
 import zipfile
 import tempfile
@@ -26,6 +25,7 @@ def clean_description(text, material_code):
 def get_price_from_row(row_list):
     for item in reversed(row_list):
         if item and re.search(r"[-+]?\d*\.\d+|\d+", str(item)):
+            # Cleans currency and symbols
             return str(item).replace("USD", "").replace("$", "").replace(",", "").strip()
     return "0.00"
 
@@ -43,8 +43,8 @@ def process_pdf(file_path, filename):
             "orderNumber": re.search(r"Order\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"Order\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
             "customerNumber": re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
             "invoiceDate": re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text, re.IGNORECASE).group(1) if re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text, re.IGNORECASE) else "Not found",
-            # FIXED TOTAL AMOUNT REGEX BELOW
-            "totalAmount": re.search(r"(?:Final amount|Total amount)\s*[|:]?\s*([\d.]+)", full_text, re.IGNORECASE).group(1) if re.search(r"(?:Final amount|Total amount)\s*[|:]?\s*([\d.]+)", full_text, re.IGNORECASE) else "0.00",
+            # Handles negative values and optional pipes/colons
+            "totalAmount": re.search(r"(?:Final amount|Total amount)\s*[|:]?\s*(-?[\d.]+)", full_text, re.IGNORECASE).group(1) if re.search(r"(?:Final amount|Total amount)\s*[|:]?\s*(-?[\d.]+)", full_text, re.IGNORECASE) else "0.00",
             "items": []
         }
 
@@ -56,7 +56,8 @@ def process_pdf(file_path, filename):
                     clean_row = [str(cell) for cell in row if cell is not None]
                     row_str = " ".join(clean_row)
 
-                    material_match = re.search(r"([A-Z]{2}\d{2}[A-Z]{2}|[A-Z]{2}\d{5}|\d{8,})", row_str)
+                    # Strict material regex: Requires letters followed by numbers to avoid invoice # capture
+                    material_match = re.search(r"([A-Z]{2,}\d{2,}[A-Z\d]*)", row_str)
                     coo_match = re.search(r"(?:COO|Country of Origin)\s*[:\s]*([A-Z]{2})", row_str, re.IGNORECASE)
 
                     if material_match:
