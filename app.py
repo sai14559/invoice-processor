@@ -49,7 +49,6 @@ def process_pdf_content(file_bytes, filename):
         return {"File Name": filename, "Error": str(e)}
 
 # --- Main UI ---
-# Added your Celigo URL as the default value
 celigo_url_default = "https://api.integrator.io/v1/exports/6a3e22e548c8b4a733fbeb15/KVk2DW2JtJkffDcxDfAx0o2S0mwcSyXP/data"
 webhook_url = st.text_input("Celigo Webhook URL", value=celigo_url_default)
 
@@ -79,7 +78,8 @@ if uploaded_files and st.button("Process & Send to Celigo"):
     if webhook_url:
         try:
             response = requests.post(webhook_url, json=all_data)
-            if response.status_code == 200 or response.status_code == 202:
+            # 204 is a success code (No Content), so we accept it now
+            if response.status_code in [200, 202, 204]:
                 st.success("Successfully sent data to Celigo!")
             else:
                 st.error(f"Failed to send to Celigo. Status Code: {response.status_code}")
