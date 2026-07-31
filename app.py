@@ -11,8 +11,10 @@ import pandas as pd
 from datetime import datetime
 
 # --- CONFIGURATION ---
-st.set_page_config(page_title="Bulk Invoice Parser", page_icon="📄")
-st.title("📄 Bulk Invoice Parser (Production Ready)")
+# Updated with your logo
+st.set_page_config(page_title="Vincent Cloud", page_icon="logo.jfif")
+st.image("logo.jfif", width=150)
+st.title("📄 Vincent Cloud (Nilfisk Invoice Parser)")
 
 # --- CLEANING HELPERS ---
 def clean_description(text, material_code):
