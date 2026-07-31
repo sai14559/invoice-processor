@@ -91,8 +91,8 @@ def main_dashboard():
                         if "Original Invoice" in row_str:
                             continue
 
-                        # Regex: Handles space-separated numbers like "147 1246 510"
-                        material_match = re.search(r"(\d{3}[\s-]?\d{4}[\s-]?\d{3}|[A-Z]{2,}\d{2,}[A-Z\d]*)", row_str)
+                        # IMPROVED REGEX: Captures 3-4-3 space/hyphen format OR 8-digit format
+                        material_match = re.search(r"(\d{3}[\s-]?\d{4}[\s-]?\d{3}|\d{8}|[A-Z]{2,}\d{2,}[A-Z\d]*)", row_str)
                         coo_match = re.search(r"(?:COO|Country of Origin)\s*[:\s]*([A-Z]{2})", row_str, re.IGNORECASE)
 
                         if material_match:
@@ -183,14 +183,17 @@ def main_dashboard():
         # --- CELIGO INTEGRATION ---
         if st.button("Send All to Celigo"):
             webhook_url = "https://api.integrator.io/v1/exports/6a6c7f1a71b45a8a6d19a25f/inWc7Qgr53a80JoSIB2P3Yf9yzb6c71J/data"
+            # Added headers to satisfy JSON API requirements
+            headers = {'Content-Type': 'application/json'}
+            
             with st.spinner("Sending..."):
                 for item in all_extracted_data:
                     try:
-                        response = requests.post(webhook_url, json=item)
+                        response = requests.post(webhook_url, json=item, headers=headers)
                         if response.status_code in [200, 201, 202, 204]:
                             st.success(f"Sent {item['fileName']} successfully")
                         else:
-                            st.error(f"Failed {item['fileName']}: {response.status_code}")
+                            st.error(f"Failed {item['fileName']}: {response.status_code} - {response.text}")
                     except Exception as e:
                         st.error(f"Error sending {item['fileName']}: {e}")
 
