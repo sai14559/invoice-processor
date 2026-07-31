@@ -46,6 +46,7 @@ def main_dashboard():
     # --- CLEANING HELPERS ---
     def clean_description(text, material_code):
         text = re.sub(re.escape(material_code), "", text, flags=re.IGNORECASE)
+        # Clean up common noise
         noise = [r"COO: [A-Z]{2}", r"Customer Material:", r"\d+\s+Material:", r"Material:", r"Quantity:.*", r"Prices:.*", r"UoM", r"Rate", r"per", r"COO: US"]
         for pattern in noise:
             text = re.sub(pattern, "", text, flags=re.IGNORECASE)
@@ -59,10 +60,8 @@ def main_dashboard():
 
     def process_pdf(file_path, filename):
         with pdfplumber.open(file_path) as pdf:
-            # Join all pages to ensure we search across the whole doc
             full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
 
-            # Improved Regex: Using [\s\S]*? to capture across potential newlines
             def extract_field(pattern, text):
                 match = re.search(pattern, text, re.IGNORECASE)
                 return match.group(1).strip() if match else "Not found"
@@ -92,7 +91,8 @@ def main_dashboard():
                         if "Original Invoice" in row_str:
                             continue
 
-                        material_match = re.search(r"(\d{5,}|[A-Z]{2,}\d{2,}[A-Z\d]*)", row_str)
+                        # Updated Regex: Handles space-separated numbers like "147 1246 510"
+                        material_match = re.search(r"(\d{3}[\s-]?\d{4}[\s-]?\d{3}|[A-Z]{2,}\d{2,}[A-Z\d]*)", row_str)
                         coo_match = re.search(r"(?:COO|Country of Origin)\s*[:\s]*([A-Z]{2})", row_str, re.IGNORECASE)
 
                         if material_match:
