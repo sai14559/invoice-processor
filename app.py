@@ -51,7 +51,6 @@ def process_pdf(file_path, filename):
                     clean_row = [str(cell) for cell in row if cell is not None]
                     row_str = " ".join(clean_row)
                     
-                    # Looser regex to ensure items get caught
                     material_match = re.search(r"([A-Z0-9]{5,})", row_str)
                     
                     if material_match:
@@ -80,9 +79,10 @@ uploaded_files = st.file_uploader("Upload Invoices (PDF or ZIP)", type=["pdf", "
 
 if uploaded_files:
     all_extracted_data = []
-    files_to_process = []
     
+    # Process within the temporary directory to avoid FileNotFoundError
     with tempfile.TemporaryDirectory() as temp_dir:
+        files_to_process = []
         for uploaded_file in uploaded_files:
             if uploaded_file.name.endswith(".zip"):
                 with zipfile.ZipFile(uploaded_file, 'r') as zip_ref:
@@ -96,13 +96,11 @@ if uploaded_files:
                 with open(temp_path, "wb") as f:
                     f.write(uploaded_file.getbuffer())
                 files_to_process.append((temp_path, uploaded_file.name))
-    
-    my_bar = st.progress(0, text="Starting processing...")
-    
-    for i, (path, name) in enumerate(files_to_process):
-        all_extracted_data.append(process_pdf(path, name))
-        percent_complete = int(((i + 1) / len(files_to_process)) * 100)
-        my_bar.progress(percent_complete, text=f"Processing {name} ({i+1}/{len(files_to_process)})")
+        
+        my_bar = st.progress(0, text="Starting processing...")
+        for i, (path, name) in enumerate(files_to_process):
+            all_extracted_data.append(process_pdf(path, name))
+            my_bar.progress(int(((i + 1) / len(files_to_process)) * 100), text=f"Processing {name}")
 
     st.success(f"Processed {len(all_extracted_data)} files!")
 
@@ -110,16 +108,6 @@ if uploaded_files:
     st.subheader("Batch Review")
     review_data = []
     for entry in all_extracted_data:
-        # Check if items exist, if not, add entry with "No items found" to ensure visibility
-        if not entry.get("items"):
-             review_data.append({
-                "File": entry["fileName"],
-                "Invoice #": entry["invoiceNumber"],
-                "Tracking #": entry["trackingNumber"],
-                "Material": "N/A",
-                "Total": entry["totalAmount"],
-                "Subtotal": "N/A"
-            })
         for item in entry.get("items", []):
             review_data.append({
                 "File": entry["fileName"],
@@ -133,29 +121,16 @@ if uploaded_files:
     df = pd.DataFrame(review_data)
     if not df.empty:
         st.dataframe(df)
-        st.write(f"Total rows ready to send: {len(df)}")
     
-    # --- CELIGO INTEGRATION & LOGGING ---
+    # --- CELIGO INTEGRATION ---
     if st.button("Send All to Celigo"):
         webhook_url = "https://api.integrator.io/v1/exports/6a3e22e548c8b4a733fbeb15/KVk2DW2JtJkffDcxDfAx0o2S0mwcSyXP/data"
-        log_file = "invoice_history.csv"
-        file_exists = os.path.isfile(log_file)
-        
-        with open(log_file, mode='a', newline='') as f:
-            writer = csv.writer(f)
-            if not file_exists:
-                writer.writerow(["Timestamp", "FileName", "InvoiceNumber", "TrackingNumber", "TotalAmount", "Status"])
-
-            for item in all_extracted_data:
-                try:
-                    response = requests.post(webhook_url, json=item)
-                    if response.status_code in [200, 201, 202, 204]:
-                        st.success(f"Successfully sent {item['fileName']}!")
-                        writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), item['fileName'], item['invoiceNumber'], item['trackingNumber'], item['totalAmount'], "Success"])
-                    else:
-                        st.error(f"Failed {item['fileName']}: {response.status_code}")
-                        writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), item['fileName'], item['invoiceNumber'], item['trackingNumber'], item['totalAmount'], f"Failed: {response.status_code}"])
-                except Exception as e:
-                    st.error(f"Error: {e}")
-                    writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), item['fileName'], "N/A", "N/A", "N/A", f"Error: {e}"])
-        st.info("Log updated: check 'invoice_history.csv' for your records.")
+        for item in all_extracted_data:
+            try:
+                response = requests.post(webhook_url, json=item)
+                if response.status_code in [200, 201, 202, 204]:
+                    st.success(f"Successfully sent {item['fileName']}!")
+                else:
+                    st.error(f"Failed {item['fileName']}: {response.status_code}")
+            except Exception as e:
+                st.error(f"Error: {e}")
