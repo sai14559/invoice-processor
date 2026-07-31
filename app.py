@@ -49,8 +49,8 @@ def process_pdf_content(file_bytes, filename):
         return {"File Name": filename, "Error": str(e)}
 
 # --- Main UI ---
-celigo_url_default = "https://api.integrator.io/v1/exports/6a3e22e548c8b4a733fbeb15/KVk2DW2JtJkffDcxDfAx0o2S0mwcSyXP/data"
-webhook_url = st.text_input("Celigo Webhook URL", value=celigo_url_default)
+# Your Celigo Webhook URL is hardcoded here to clean up the interface
+webhook_url = "https://api.integrator.io/v1/exports/6a3e22e548c8b4a733fbeb15/KVk2DW2JtJkffDcxDfAx0o2S0mwcSyXP/data"
 
 uploaded_files = st.file_uploader("Upload PDF or ZIP files", type=["pdf", "zip"], accept_multiple_files=True)
 
@@ -72,13 +72,15 @@ if uploaded_files and st.button("Process & Send to Celigo"):
 
     # Display Results
     df = pd.DataFrame(all_data)
-    st.table(df)
-
-    # Celigo Send Logic
-    if webhook_url:
+    
+    if not df.empty:
+        st.success("Extraction Complete!")
+        st.table(df)
+        
+        # Celigo Send Logic
         try:
             response = requests.post(webhook_url, json=all_data)
-            # 204 is a success code (No Content), so we accept it now
+            # Accept 204 as success
             if response.status_code in [200, 202, 204]:
                 st.success("Successfully sent data to Celigo!")
             else:
@@ -86,4 +88,4 @@ if uploaded_files and st.button("Process & Send to Celigo"):
         except Exception as e:
             st.error(f"Error connecting to Celigo: {e}")
     else:
-        st.warning("Please provide a valid Webhook URL.")
+        st.warning("No invoice data could be extracted. Please ensure files are PDFs.")
