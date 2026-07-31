@@ -68,7 +68,8 @@ def main_dashboard():
                 "documentType": "Invoice",
                 "invoiceNumber": re.search(r"Number\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE).group(1) if re.search(r"Number\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE) else "Not found",
                 "poNumber": re.search(r"PO\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"PO\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
-                "trackingNumber": re.search(r"Tracking\s*Number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"Tracking\s*Number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
+                # Updated regex to capture "Tracking nr."
+                "trackingNumber": re.search(r"Tracking\s*nr\.\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"Tracking\s*nr\.\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
                 "orderNumber": re.search(r"Order\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"Order\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
                 "customerNumber": re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
                 "invoiceDate": re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text, re.IGNORECASE).group(1) if re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text, re.IGNORECASE) else "Not found",
