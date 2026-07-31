@@ -25,7 +25,7 @@ def login_screen():
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
-        if username == "VincentCloud" and password == "Vincent@123":
+        if username == "admin" and password == "Vincent@123":
             st.session_state['authenticated'] = True
             st.rerun()
         else:
@@ -59,20 +59,25 @@ def main_dashboard():
 
     def process_pdf(file_path, filename):
         with pdfplumber.open(file_path) as pdf:
+            # Join all pages to ensure we search across the whole doc
             full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
 
-            # Header level extraction
+            # Improved Regex: Using [\s\S]*? to capture across potential newlines
+            def extract_field(pattern, text):
+                match = re.search(pattern, text, re.IGNORECASE)
+                return match.group(1).strip() if match else "Not found"
+
             invoice_json = {
                 "fileName": filename,
                 "fileType": "PDF",
                 "documentType": "Invoice",
-                "invoiceNumber": re.search(r"Number\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE).group(1) if re.search(r"Number\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE) else "Not found",
-                "poNumber": re.search(r"PO\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"PO\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
-                "trackingNumber": re.search(r"Tracking\s*nr\.\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE).group(1) if re.search(r"Tracking\s*nr\.\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE) else "Not found",
-                "orderNumber": re.search(r"Order\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"Order\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
-                "customerNumber": re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
-                "invoiceDate": re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text, re.IGNORECASE).group(1) if re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text, re.IGNORECASE) else "Not found",
-                "totalAmount": re.search(r"(?:Final amount|Total amount)\s*[|:]?\s*(-?[\d.]+)", full_text, re.IGNORECASE).group(1) if re.search(r"(?:Final amount|Total amount)\s*[|:]?\s*(-?[\d.]+)", full_text, re.IGNORECASE) else "0.00",
+                "invoiceNumber": extract_field(r"Number\s*[|:]?\s*(\w+)", full_text),
+                "poNumber": extract_field(r"PO\s*Number\s*[|:]?\s*([\w-]+)", full_text),
+                "trackingNumber": extract_field(r"Tracking\s*nr\.\s*[|:]?\s*(\w+)", full_text),
+                "orderNumber": extract_field(r"Order\s*Number\s*[|:]?\s*([\w-]+)", full_text),
+                "customerNumber": extract_field(r"Customer\s*Number\s*[|:]?\s*(\w+)", full_text),
+                "invoiceDate": extract_field(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text),
+                "totalAmount": extract_field(r"(?:Total amount:)\s*[|:]?\s*(-?[\d.]+)", full_text),
                 "items": []
             }
 
@@ -84,11 +89,9 @@ def main_dashboard():
                         clean_row = [str(cell) for cell in row if cell is not None]
                         row_str = " ".join(clean_row)
                         
-                        # --- EXCLUSION FILTER ---
                         if "Original Invoice" in row_str:
                             continue
 
-                        # Regex: Looks for 5+ digit numeric or alphanumeric codes
                         material_match = re.search(r"(\d{5,}|[A-Z]{2,}\d{2,}[A-Z\d]*)", row_str)
                         coo_match = re.search(r"(?:COO|Country of Origin)\s*[:\s]*([A-Z]{2})", row_str, re.IGNORECASE)
 
