@@ -25,7 +25,7 @@ def login_screen():
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
-        if username == "admin" and password == "Vincent@123":
+        if username == "VincentCloud" and password == "Vincent@123":
             st.session_state['authenticated'] = True
             st.rerun()
         else:
