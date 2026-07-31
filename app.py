@@ -34,35 +34,36 @@ def process_pdf_content(file_bytes, filename):
             # We join the first 2 pages to get header/footer info
             full_text = "\n".join([page.extract_text() for page in pdf.pages[:2] if page.extract_text()])
             
-            # 1. Invoice & PO Numbers
-            invoice_num = find_field(full_text, [r"(?:Invoice|Credit Note|Document)\s*Number\s*[|:]?\s*([\w-]+)", r"Number\s*[|:]?\s*([\w-]+)"])
-            po_num = find_field(full_text, [r"PO\s*Number\s*[|:]?\s*([\w-]+)", r"Purchase Order\s*[|:]?\s*([\w-]+)", r"Order\s*#\s*([\w-]+)"])
-            
-            # 2. Dates
-            date = find_field(full_text, [r"(?:Date|Invoice Date)\s*[:\s]*\s*([\d\/\-\.]{8,10})"])
-            due_date = find_field(full_text, [r"(?:Due Date)\s*[:\s]*\s*([\d\/\-\.]{8,10})"])
-            
-            # 3. Vendor (Often at the top)
-            vendor_name = find_field(full_text, [r"(?:Vendor|From)\s*[:\s]*(.*)"])
-            
-            # 4. Financials
-            subtotal = find_field(full_text, [r"(?:Subtotal|Net Amount)\s*[:\s]*\$?\s*([\d,]+\.\d{2})"], default="0.00")
-            tax = find_field(full_text, [r"(?:Tax|VAT|GST)\s*[:\s]*\$?\s*([\d,]+\.\d{2})"], default="0.00")
-            total = find_field(full_text, [
-                r"(?:Total|Credit|Balance|Amount Due|Grand Total)\s*[:\s]*\$?\s*([\d,]+\.\d{2})",
-                r"(?:Total|Credit|Balance|Amount Due|Grand Total)\s*[\w\s]*\$?\s*([\d,]+\.\d{2})"
+            # --- EXTRACTING FIELDS ---
+            order_number = find_field(full_text, [r"(?:Order\s*Number|Order\s*#)\s*[:\s]*([\w-]+)"])
+            customer_number = find_field(full_text, [r"(?:Customer\s*Number|Account\s*#)\s*[:\s]*([\w-]+)"])
+            description = find_field(full_text, [r"(?:Description)\s*[:\s]*(.*)"])
+            coo = find_field(full_text, [r"(?:COO|Country\s*of\s*Origin)\s*[:\s]*([\w\s]+)"])
+            material = find_field(full_text, [r"(?:Material)\s*[:\s]*([\w-]+)"])
+            item = find_field(full_text, [r"(?:Item)\s*[:\s]*([\w-]+)"])
+            quantity = find_field(full_text, [r"(?:Quantity|Qty)\s*[:\s]*([\d]+)"])
+            public_price = find_field(full_text, [r"(?:Public\s*Price)\s*[:\s]*\$?\s*([\d,]+\.\d{2})"])
+            discount = find_field(full_text, [r"(?:Discount)\s*[:\s]*([\d]+%)"])
+            subtotal = find_field(full_text, [r"(?:Subtotal)\s*[:\s]*\$?\s*([\d,]+\.\d{2})"], default="0.00")
+            total_amount = find_field(full_text, [
+                r"(?:Total\s*Amount|Grand\s*Total|Total)\s*[:\s]*\$?\s*([\d,]+\.\d{2})"
             ], default="0.00")
+            date = find_field(full_text, [r"(?:Date)\s*[:\s]*\s*([\d\/\-\.]{8,10})"])
             
             return {
                 "File Name": filename,
-                "Vendor": vendor_name,
-                "Invoice Number": invoice_num,
-                "PO Number": po_num,
-                "Invoice Date": date,
-                "Due Date": due_date,
+                "Order Number": order_number,
+                "Customer Number": customer_number,
+                "Description": description,
+                "COO": coo,
+                "Material": material,
+                "Item": item,
+                "Quantity": quantity,
+                "Public Price": public_price.replace(",", ""),
+                "Discount": discount,
                 "Subtotal": subtotal.replace(",", ""),
-                "Tax": tax.replace(",", ""),
-                "Total Amount": total.replace(",", "")
+                "Total Amount": total_amount.replace(",", ""),
+                "Date": date
             }
     except Exception as e:
         return {"File Name": filename, "Error": f"Extraction Failed: {str(e)}"}
