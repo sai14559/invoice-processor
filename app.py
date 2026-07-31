@@ -84,7 +84,7 @@ def main_dashboard():
                         clean_row = [str(cell) for cell in row if cell is not None]
                         row_str = " ".join(clean_row)
 
-                        # Updated Regex: Looks for 5+ digit numeric or alphanumeric codes
+                        # Regex: Looks for 5+ digit numeric or alphanumeric codes
                         material_match = re.search(r"(\d{5,}|[A-Z]{2,}\d{2,}[A-Z\d]*)", row_str)
                         coo_match = re.search(r"(?:COO|Country of Origin)\s*[:\s]*([A-Z]{2})", row_str, re.IGNORECASE)
 
@@ -142,12 +142,11 @@ def main_dashboard():
         st.subheader("Batch Review")
         review_data = []
         for entry in all_extracted_data:
-            # If no items are found, we still show the invoice metadata in the table
             if not entry.get("items"):
                 review_data.append({
                     "File": entry["fileName"], "Invoice #": entry["invoiceNumber"], "Tracking #": entry["trackingNumber"],
-                    "PO #": entry["poNumber"], "Order #": entry["orderNumber"], "Date": entry["invoiceDate"],
-                    "Material": "N/A", "Subtotal": "0.00", "Total": entry["totalAmount"]
+                    "PO #": entry["poNumber"], "Order #": entry["orderNumber"], "Customer #": entry["customerNumber"], "Date": entry["invoiceDate"],
+                    "Item": "N/A", "Material": "N/A", "Subtotal": "0.00", "Total": entry["totalAmount"]
                 })
             else:
                 for item in entry.get("items", []):
@@ -157,7 +156,9 @@ def main_dashboard():
                         "Tracking #": entry["trackingNumber"],
                         "PO #": entry["poNumber"],
                         "Order #": entry["orderNumber"],
+                        "Customer #": entry["customerNumber"],
                         "Date": entry["invoiceDate"],
+                        "Item": item["item"],
                         "Material": item["material"],
                         "Description": item["description"],
                         "COO": item["coo"],
