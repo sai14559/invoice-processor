@@ -1,7 +1,20 @@
 import re
 import pdfplumber
-import json
 import streamlit as st
+import pandas as pd
+
+# --- Configuration ---
+st.set_page_config(page_title="Invoice Processor", layout="wide")
+
+# --- UI Header ---
+# Ensure "logo.jfif.jfif" matches the exact filename in your GitHub repository
+try:
+    st.image("logo.jfif.jfif", width=200)
+except Exception:
+    st.warning("Logo file not found. Ensure 'logo.jfif.jfif' exists in your repo.")
+
+st.title("Bulk Invoice Processor")
+st.write("Upload multiple PDF invoices to extract data.")
 
 # --- Helper Functions ---
 def find_field(text, patterns):
@@ -14,66 +27,54 @@ def find_field(text, patterns):
 
 def process_pdf(uploaded_file):
     """Parses the PDF file uploaded via Streamlit."""
-    invoice_json = {
-        "fileName": uploaded_file.name,
-        "documentType": "Credit Note" if "credit" in uploaded_file.name.lower() else "Invoice",
-        "invoiceNumber": None,
-        "poNumber": None,
-        "totalAmount": "0.00",
-        "items": []
-    }
-
     try:
         with pdfplumber.open(uploaded_file) as pdf:
             # Extract text from all pages
             full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
 
             # Extract fields
-            invoice_json["invoiceNumber"] = find_field(full_text, [
+            invoice_num = find_field(full_text, [
                 r"(?:Invoice|Credit Note|Document)\s*Number\s*[|:]?\s*([\w-]+)",
                 r"Number\s*[|:]?\s*([\w-]+)"
             ])
-            
-            invoice_json["poNumber"] = find_field(full_text, [
-                r"PO\s*Number\s*[|:]?\s*([\w-]+)",
-                r"Purchase Order\s*[|:]?\s*([\w-]+)"
-            ])
-            
+
             total_str = find_field(full_text, [
                 r"(?:Total|Credit)\s*amount\s*[|:]?\s*([\d,.]+)",
                 r"Total\s*Due\s*[|:]?\s*([\d,.]+)"
             ])
-            invoice_json["totalAmount"] = total_str.replace(",", "") if total_str != "Not found" else "0.00"
+            # Clean amount: remove commas
+            total_val = total_str.replace(",", "") if total_str != "Not found" else "0.00"
 
-            # Table extraction
-            for page in pdf.pages:
-                table = page.extract_table()
-                if table:
-                    for row in table:
-                        clean_row = [str(cell) for cell in row if cell is not None]
-                        row_str = " ".join(clean_row)
-                        material_match = re.search(r"([A-Z]{2}\s?\d{5}|\d{8,})", row_str)
-                        if material_match:
-                            invoice_json["items"].append({"materialCode": material_match.group(0)})
-                            
+            return {
+                "File Name": uploaded_file.name,
+                "Invoice Number": invoice_num,
+                "Total Amount": total_val
+            }
     except Exception as e:
-        return {"error": str(e)}
+        return {"File Name": uploaded_file.name, "Error": str(e)}
 
-    return invoice_json
+# --- UI Logic ---
+uploaded_files = st.file_uploader("Upload PDF invoices", type=["pdf"], accept_multiple_files=True)
 
-# --- Main Streamlit UI ---
-st.title("Invoice Processor")
-st.write("Upload your PDF to extract invoice data.")
+if uploaded_files:
+    if st.button("Process All Files"):
+        results = []
+        with st.spinner("Processing files..."):
+            for file in uploaded_files:
+                data = process_pdf(file)
+                results.append(data)
 
-uploaded_file = st.file_uploader("Choose a PDF file", type=["pdf"])
+        st.success("Extraction Complete!")
+        df = pd.DataFrame(results)
 
-if uploaded_file is not None:
-    if st.button("Process Invoice"):
-        with st.spinner("Processing..."):
-            result = process_pdf(uploaded_file)
-            
-            if "error" in result:
-                st.error(f"Error: {result['error']}")
-            else:
-                st.success("Extraction Complete!")
-                st.json(result)
+        # Display table
+        st.dataframe(df, use_container_width=True)
+
+        # CSV Download
+        csv = df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Download Results as CSV",
+            data=csv,
+            file_name="invoice_data.csv",
+            mime="text/csv"
+        )
