@@ -20,7 +20,7 @@ if 'show_welcome' not in st.session_state:
 if 'all_extracted_data' not in st.session_state:
     st.session_state['all_extracted_data'] = []
 
-# --- CLEANING HELPERS (Your logic preserved) ---
+# --- CLEANING HELPERS ---
 def clean_description(text, material_code):
     text = re.sub(re.escape(material_code), "", text, flags=re.IGNORECASE)
     noise = [r"COO: [A-Z]{2}", r"Customer Material:", r"\d+\s+Material:", r"Material:", r"Quantity:.*", r"Prices:.*", r"UoM", r"Rate", r"per", r"COO: US"]
@@ -113,7 +113,7 @@ def main_dashboard():
     with c1:
         if st.button("Process Files", type="primary", use_container_width=True):
             if uploaded_files:
-                st.session_state['all_extracted_data'] = [] # Reset state for new batch
+                st.session_state['all_extracted_data'] = []
                 with tempfile.TemporaryDirectory() as temp_dir:
                     files_to_process = []
                     for uploaded_file in uploaded_files:
@@ -171,6 +171,10 @@ def main_dashboard():
                     "Description": item["description"],
                     "COO": item["coo"],
                     "Qty": item["quantity"],
+                    "UoM": item["uom"],
+                    "Public Price": item["publicPrice"],
+                    "Discount": item["discount"],
+                    "Subtotal": item["subtotal"],
                     "Total": entry["totalAmount"]
                 })
         st.dataframe(pd.DataFrame(review_data))
