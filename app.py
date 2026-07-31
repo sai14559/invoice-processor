@@ -18,7 +18,7 @@ if 'authenticated' not in st.session_state:
 if 'welcome_completed' not in st.session_state:
     st.session_state['welcome_completed'] = False
 
-# --- UI COMPONENTS ---
+# --- LOGIN & WELCOME SCREENS ---
 def login_screen():
     st.image("https://media.licdn.com/dms/image/v2/D4D0BAQFJviu2NEE-Sw/company-logo_200_200/company-logo_200_200/0/1667374445161/vincent_clouds_logo?e=2147483647&v=beta&t=Jhv9ka9lcSdISkUbqyYaQ36SesJSXP0Br7xNAeEoR_k", width=150)
     st.title("Login to Vincent Cloud")
@@ -43,69 +43,148 @@ def main_dashboard():
     st.image("https://media.licdn.com/dms/image/v2/D4D0BAQFJviu2NEE-Sw/company-logo_200_200/company-logo_200_200/0/1667374445161/vincent_clouds_logo?e=2147483647&v=beta&t=Jhv9ka9lcSdISkUbqyYaQ36SesJSXP0Br7xNAeEoR_k", width=150)
     st.title("📄 Vincent Cloud (Nilfisk Invoice Parser)")
 
-    # --- UPDATED PARSER ---
+    # --- CLEANING HELPERS ---
+    def clean_description(text, material_code):
+        text = re.sub(re.escape(material_code), "", text, flags=re.IGNORECASE)
+        noise = [r"COO: [A-Z]{2}", r"Customer Material:", r"\d+\s+Material:", r"Material:", r"Quantity:.*", r"Prices:.*", r"UoM", r"Rate", r"per", r"COO: US"]
+        for pattern in noise:
+            text = re.sub(pattern, "", text, flags=re.IGNORECASE)
+        return " ".join(text.split()).strip()
+
+    def get_price_from_row(row_list):
+        for item in reversed(row_list):
+            if item and re.search(r"[-+]?\d*\.\d+|\d+", str(item)):
+                return str(item).replace("USD", "").replace("$", "").replace(",", "").strip()
+        return "0.00"
+
     def process_pdf(file_path, filename):
         with pdfplumber.open(file_path) as pdf:
             full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
 
-            # Extract basic header info
+            # Header level extraction
             invoice_json = {
                 "fileName": filename,
-                "invoiceNumber": re.search(r"Number\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE).group(1) if re.search(r"Number\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE) else "N/A",
-                "poNumber": re.search(r"PO\s*Number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"PO\s*Number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "N/A",
-                "trackingNumber": re.search(r"Tracking nr\.\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE).group(1) if re.search(r"Tracking nr\.\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE) else "N/A",
-                "totalAmount": re.search(r"(?:Total amount:)\s*[|:]?\s*([\d.]+)", full_text, re.IGNORECASE).group(1) if re.search(r"(?:Total amount:)\s*[|:]?\s*([\d.]+)", full_text, re.IGNORECASE) else "0.00",
+                "fileType": "PDF",
+                "documentType": "Invoice",
+                "invoiceNumber": re.search(r"Number\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE).group(1) if re.search(r"Number\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE) else "Not found",
+                "poNumber": re.search(r"PO\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"PO\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
+                "trackingNumber": re.search(r"Tracking\s*nr\.\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE).group(1) if re.search(r"Tracking\s*nr\.\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE) else "Not found",
+                "orderNumber": re.search(r"Order\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"Order\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
+                "customerNumber": re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
+                "invoiceDate": re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text, re.IGNORECASE).group(1) if re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text, re.IGNORECASE) else "Not found",
+                "totalAmount": re.search(r"(?:Final amount|Total amount)\s*[|:]?\s*(-?[\d.]+)", full_text, re.IGNORECASE).group(1) if re.search(r"(?:Final amount|Total amount)\s*[|:]?\s*(-?[\d.]+)", full_text, re.IGNORECASE) else "0.00",
                 "items": []
             }
 
-            # Improved Item Extraction: Regex looks for 5+ digit codes (handles purely numeric materials)
+            current_item = None
             for page in pdf.pages:
                 table = page.extract_table()
                 if table:
                     for row in table:
-                        row_str = " ".join([str(cell) for cell in row if cell])
-                        # New Regex: Looks for 5-10 digit numbers (covers your material codes)
-                        material_match = re.search(r"(\b\d{5,10}\b)", row_str)
-                        if material_match and "Total" not in row_str:
-                            invoice_json["items"].append({
-                                "material": material_match.group(1),
-                                "raw_row": row_str
-                            })
+                        clean_row = [str(cell) for cell in row if cell is not None]
+                        row_str = " ".join(clean_row)
+
+                        # Updated Regex: Looks for 5+ digit numeric or alphanumeric codes
+                        material_match = re.search(r"(\d{5,}|[A-Z]{2,}\d{2,}[A-Z\d]*)", row_str)
+                        coo_match = re.search(r"(?:COO|Country of Origin)\s*[:\s]*([A-Z]{2})", row_str, re.IGNORECASE)
+
+                        if material_match:
+                            current_item = {
+                                "item": clean_row[0] if len(clean_row) > 0 else "N/A",
+                                "material": material_match.group(0),
+                                "description": clean_description(row_str, material_match.group(0)),
+                                "coo": coo_match.group(1) if coo_match else "N/A",
+                                "quantity": "1",
+                                "uom": "PC",
+                                "publicPrice": "0.00",
+                                "discount": "0.00",
+                                "subtotal": "0.00"
+                            }
+                            invoice_json["items"].append(current_item)
+                        elif current_item:
+                            if any(label in row_str for label in ["Public price", "Net Pricelist price", "Manual price"]):
+                                current_item["publicPrice"] = get_price_from_row(clean_row)
+                            elif "Discount" in row_str:
+                                current_item["discount"] = get_price_from_row(clean_row)
+                            elif "Subtotal" in row_str:
+                                current_item["subtotal"] = get_price_from_row(clean_row)
             return invoice_json
 
-    uploaded_files = st.file_uploader("Upload Invoices", type=["pdf"], accept_multiple_files=True)
+    uploaded_files = st.file_uploader("Upload Invoices (PDF or ZIP)", type=["pdf", "zip"], accept_multiple_files=True)
 
     if uploaded_files:
-        all_data = []
+        all_extracted_data = []
+        files_to_process = []
+
         with tempfile.TemporaryDirectory() as temp_dir:
             for uploaded_file in uploaded_files:
-                temp_path = os.path.join(temp_dir, uploaded_file.name)
-                with open(temp_path, "wb") as f:
-                    f.write(uploaded_file.getbuffer())
-                all_data.append(process_pdf(temp_path, uploaded_file.name))
+                if uploaded_file.name.endswith(".zip"):
+                    with zipfile.ZipFile(uploaded_file, 'r') as zip_ref:
+                        zip_ref.extractall(temp_dir)
+                        for root, dirs, files in os.walk(temp_dir):
+                            for file_name in files:
+                                if file_name.lower().endswith(".pdf"):
+                                    files_to_process.append((os.path.join(root, file_name), file_name))
+                else:
+                    temp_path = os.path.join(temp_dir, uploaded_file.name)
+                    with open(temp_path, "wb") as f:
+                        f.write(uploaded_file.getbuffer())
+                    files_to_process.append((temp_path, uploaded_file.name))
 
-        # --- PREVIEW SECTION ---
-        st.subheader("Data Preview (Before Sending)")
-        for entry in all_data:
-            with st.expander(f"Data for {entry['fileName']}"):
-                st.json(entry)
+            my_bar = st.progress(0, text="Starting processing...")
+            for i, (path, name) in enumerate(files_to_process):
+                all_extracted_data.append(process_pdf(path, name))
+                my_bar.progress(int(((i + 1) / len(files_to_process)) * 100), text=f"Processing {name}")
 
-        # --- BATCH REVIEW TABLE ---
+        st.success(f"Processed {len(all_extracted_data)} files!")
+
+        # --- REVIEW TABLE ---
         st.subheader("Batch Review")
-        df_list = []
-        for entry in all_data:
-            # If no items found, still show the invoice info
-            if not entry["items"]:
-                df_list.append({"File": entry["fileName"], "Invoice": entry["invoiceNumber"], "Tracking": entry["trackingNumber"], "Material": "No items detected", "Amount": entry["totalAmount"]})
+        review_data = []
+        for entry in all_extracted_data:
+            # If no items are found, we still show the invoice metadata in the table
+            if not entry.get("items"):
+                review_data.append({
+                    "File": entry["fileName"], "Invoice #": entry["invoiceNumber"], "Tracking #": entry["trackingNumber"],
+                    "PO #": entry["poNumber"], "Order #": entry["orderNumber"], "Date": entry["invoiceDate"],
+                    "Material": "N/A", "Subtotal": "0.00", "Total": entry["totalAmount"]
+                })
             else:
-                for item in entry["items"]:
-                    df_list.append({"File": entry["fileName"], "Invoice": entry["invoiceNumber"], "Tracking": entry["trackingNumber"], "Material": item["material"], "Amount": entry["totalAmount"]})
-        
-        st.dataframe(pd.DataFrame(df_list))
+                for item in entry.get("items", []):
+                    review_data.append({
+                        "File": entry["fileName"],
+                        "Invoice #": entry["invoiceNumber"],
+                        "Tracking #": entry["trackingNumber"],
+                        "PO #": entry["poNumber"],
+                        "Order #": entry["orderNumber"],
+                        "Date": entry["invoiceDate"],
+                        "Material": item["material"],
+                        "Description": item["description"],
+                        "COO": item["coo"],
+                        "Qty": item["quantity"],
+                        "Public Price": item["publicPrice"],
+                        "Discount": item["discount"],
+                        "Subtotal": item["subtotal"],
+                        "Total": entry["totalAmount"]
+                    })
 
+        df = pd.DataFrame(review_data)
+        if not df.empty:
+            st.dataframe(df)
+
+        # --- CELIGO INTEGRATION ---
         if st.button("Send All to Celigo"):
-            st.info("Sending data...")
-            # Logic remains the same
+            webhook_url = "https://api.integrator.io/v1/exports/6a3e22e548c8b4a733fbeb15/KVk2DW2JtJkffDcxDfAx0o2S0mwcSyXP/data"
+            with st.spinner("Sending..."):
+                for item in all_extracted_data:
+                    try:
+                        response = requests.post(webhook_url, json=item)
+                        if response.status_code in [200, 201, 202, 204]:
+                            st.success(f"Sent {item['fileName']} successfully")
+                        else:
+                            st.error(f"Failed {item['fileName']}: {response.status_code}")
+                    except Exception as e:
+                        st.error(f"Error sending {item['fileName']}: {e}")
 
 # --- APP FLOW ---
 if not st.session_state['authenticated']:
