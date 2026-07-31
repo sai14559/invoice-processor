@@ -39,6 +39,9 @@ def process_pdf(file_path, filename):
             "fileType": "PDF",
             "documentType": "Invoice",
             "invoiceNumber": re.search(r"Number\s*[|:]?\s*(\d+)", full_text).group(1) if re.search(r"Number\s*[|:]?\s*(\d+)", full_text) else "Not found",
+            "poNumber": re.search(r"PO\s*Number\s*[|:]?\s*([\w-]+)", full_text).group(1) if re.search(r"PO\s*Number\s*[|:]?\s*([\w-]+)", full_text) else "Not found",
+            "orderNumber": re.search(r"Order\s*Number\s*[|:]?\s*([\w-]+)", full_text).group(1) if re.search(r"Order\s*Number\s*[|:]?\s*([\w-]+)", full_text) else "Not found",
+            "customerNumber": re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text).group(1) if re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text) else "Not found",
             "invoiceDate": re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text).group(1) if re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text) else "Not found",
             "totalAmount": re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text).group(1) if re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text) else "0.00",
             "items": []
@@ -114,6 +117,9 @@ if uploaded_files:
             review_data.append({
                 "File": entry["fileName"],
                 "Invoice #": entry["invoiceNumber"],
+                "PO #": entry["poNumber"],
+                "Order #": entry["orderNumber"],
+                "Cust #": entry["customerNumber"],
                 "Date": entry["invoiceDate"],
                 "Material": item["material"],
                 "Description": item["description"],
