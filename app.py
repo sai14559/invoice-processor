@@ -26,6 +26,7 @@ def clean_description(text, material_code):
 def get_price_from_row(row_list):
     for item in reversed(row_list):
         if item and re.search(r"[-+]?\d*\.\d+|\d+", str(item)):
+            # Clean currency symbols
             return str(item).replace("USD", "").replace("$", "").replace(",", "").strip()
     return "0.00"
 
@@ -33,15 +34,17 @@ def process_pdf(file_path, filename):
     with pdfplumber.open(file_path) as pdf:
         full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
 
-        # Header level extraction
+        # Header level extraction (with re.IGNORECASE for robustness)
         invoice_json = {
             "fileName": filename,
-            "invoiceNumber": re.search(r"Number\s*[|:]?\s*(\w+)", full_text).group(1) if re.search(r"Number\s*[|:]?\s*(\w+)", full_text) else "Not found",
-            "poNumber": re.search(r"PO\s*Number\s*[|:]?\s*([\w-]+)", full_text).group(1) if re.search(r"PO\s*Number\s*[|:]?\s*([\w-]+)", full_text) else "Not found",
-            "orderNumber": re.search(r"Order\s*Number\s*[|:]?\s*([\w-]+)", full_text).group(1) if re.search(r"Order\s*Number\s*[|:]?\s*([\w-]+)", full_text) else "Not found",
-            "customerNumber": re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text).group(1) if re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text) else "Not found",
-            "date": re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text).group(1) if re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text) else "Not found",
-            "totalAmount": re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text).group(1) if re.search(r"Total amount:\s*[|:]?\s*([\d.]+)", full_text) else "0.00",
+            "fileType": "PDF",
+            "documentType": "Invoice",
+            "invoiceNumber": re.search(r"Number\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE).group(1) if re.search(r"Number\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE) else "Not found",
+            "poNumber": re.search(r"PO\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"PO\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
+            "orderNumber": re.search(r"Order\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"Order\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
+            "customerNumber": re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"Customer\s*Number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
+            "invoiceDate": re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text, re.IGNORECASE).group(1) if re.search(r"Date\s*[|:]?\s*([A-Za-z]+\s+\d+,\s+\d+)", full_text, re.IGNORECASE) else "Not found",
+            "totalAmount": re.search(r"(?:Final amount|Total amount):\s*[|:]?\s*([\d.]+)", full_text, re.IGNORECASE).group(1) if re.search(r"(?:Final amount|Total amount):\s*[|:]?\s*([\d.]+)", full_text, re.IGNORECASE) else "0.00",
             "items": []
         }
 
@@ -53,7 +56,8 @@ def process_pdf(file_path, filename):
                     clean_row = [str(cell) for cell in row if cell is not None]
                     row_str = " ".join(clean_row)
 
-                    material_match = re.search(r"([A-Z]{2}\d{5}|\d{8,})", row_str)
+                    # Updated Regex: Handles SN18WD style (Letters/Numbers/Letters) AND standard codes[cite: 3]
+                    material_match = re.search(r"([A-Z]{2}\d{2}[A-Z]{2}|[A-Z]{2}\d{5}|\d{8,})", row_str)
                     coo_match = re.search(r"(?:COO|Country of Origin)\s*[:\s]*([A-Z]{2})", row_str, re.IGNORECASE)
 
                     if material_match:
@@ -63,19 +67,19 @@ def process_pdf(file_path, filename):
                             "description": clean_description(row_str, material_match.group(0)),
                             "coo": coo_match.group(1) if coo_match else "N/A",
                             "quantity": "1",
+                            "uom": "PC",
                             "publicPrice": "0.00",
                             "discount": "0.00",
                             "subtotal": "0.00"
                         }
                         invoice_json["items"].append(current_item)
                     elif current_item:
-                        if any(label in row_str for label in ["Public price", "Net Pricelist price"]):
+                        if any(label in row_str for label in ["Public price", "Net Pricelist price", "Manual price"]):
                             current_item["publicPrice"] = get_price_from_row(clean_row)
                         elif "Discount" in row_str:
                             current_item["discount"] = get_price_from_row(clean_row)
                         elif "Subtotal" in row_str:
                             current_item["subtotal"] = get_price_from_row(clean_row)
-                            
     return invoice_json
 
 # --- MAIN APP ---
@@ -114,18 +118,18 @@ if uploaded_files:
         for item in entry.get("items", []):
             review_data.append({
                 "File": entry["fileName"],
-                "Date": entry["date"],
+                "Invoice #": entry["invoiceNumber"],
+                "PO #": entry["poNumber"],
                 "Order #": entry["orderNumber"],
-                "Cust #": entry["customerNumber"],
+                "Date": entry["invoiceDate"],
                 "Material": item["material"],
-                "Item": item["item"],
                 "Description": item["description"],
                 "COO": item["coo"],
                 "Qty": item["quantity"],
                 "Public Price": item["publicPrice"],
                 "Discount": item["discount"],
                 "Subtotal": item["subtotal"],
-                "Total Amount": entry["totalAmount"]
+                "Total": entry["totalAmount"]
             })
 
     df = pd.DataFrame(review_data)
