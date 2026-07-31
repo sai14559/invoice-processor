@@ -1,11 +1,13 @@
 import streamlit as st
 import pdfplumber
+import json
 import requests
 import re
 import os
 import zipfile
 import tempfile
 import pandas as pd
+from datetime import datetime
 
 # --- CONFIGURATION ---
 st.set_page_config(page_title="Vincent Cloud", page_icon="☁️", layout="wide")
@@ -16,9 +18,9 @@ if 'authenticated' not in st.session_state:
 if 'show_welcome' not in st.session_state:
     st.session_state['show_welcome'] = False
 if 'all_extracted_data' not in st.session_state:
-    st.session_state['all_extracted_data'] = None
+    st.session_state['all_extracted_data'] = []
 
-# --- CLEANING HELPERS ---
+# --- CLEANING HELPERS (Your logic preserved) ---
 def clean_description(text, material_code):
     text = re.sub(re.escape(material_code), "", text, flags=re.IGNORECASE)
     noise = [r"COO: [A-Z]{2}", r"Customer Material:", r"\d+\s+Material:", r"Material:", r"Quantity:.*", r"Prices:.*", r"UoM", r"Rate", r"per", r"COO: US"]
@@ -37,6 +39,8 @@ def process_pdf(file_path, filename):
         full_text = "\n".join([page.extract_text() for page in pdf.pages if page.extract_text()])
         invoice_json = {
             "fileName": filename,
+            "fileType": "PDF",
+            "documentType": "Invoice",
             "invoiceNumber": re.search(r"Number\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE).group(1) if re.search(r"Number\s*[|:]?\s*(\w+)", full_text, re.IGNORECASE) else "Not found",
             "poNumber": re.search(r"PO\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"PO\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
             "orderNumber": re.search(r"Order\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE).group(1) if re.search(r"Order\s*number\s*[|:]?\s*([\w-]+)", full_text, re.IGNORECASE) else "Not found",
@@ -61,6 +65,7 @@ def process_pdf(file_path, filename):
                             "description": clean_description(row_str, material_match.group(0)),
                             "coo": coo_match.group(1) if coo_match else "N/A",
                             "quantity": "1",
+                            "uom": "PC",
                             "publicPrice": "0.00",
                             "discount": "0.00",
                             "subtotal": "0.00"
@@ -75,7 +80,7 @@ def process_pdf(file_path, filename):
                             current_item["subtotal"] = get_price_from_row(clean_row)
     return invoice_json
 
-# --- PAGES ---
+# --- UI PAGES ---
 def login_page():
     st.image("https://media.licdn.com/dms/image/v2/D4D0BAQFJviu2NEE-Sw/company-logo_200_200/company-logo_200_200/0/1667374445161/vincent_clouds_logo?e=2147483647&v=beta&t=Jhv9ka9lcSdISkUbqyYaQ36SesJSXP0Br7xNAeEoR_k", width=150)
     st.title("Login to Vincent Cloud")
@@ -104,13 +109,13 @@ def main_dashboard():
     
     uploaded_files = st.file_uploader("Upload Invoices (PDF or ZIP)", type=["pdf", "zip"], accept_multiple_files=True)
     
-    # Buttons row at the top
     c1, c2, c3 = st.columns([1, 1, 1])
     with c1:
         if st.button("Process Files", type="primary", use_container_width=True):
             if uploaded_files:
-                all_data = []
+                st.session_state['all_extracted_data'] = [] # Reset state for new batch
                 with tempfile.TemporaryDirectory() as temp_dir:
+                    files_to_process = []
                     for uploaded_file in uploaded_files:
                         if uploaded_file.name.endswith(".zip"):
                             with zipfile.ZipFile(uploaded_file, 'r') as zip_ref:
@@ -118,13 +123,18 @@ def main_dashboard():
                                 for root, dirs, files in os.walk(temp_dir):
                                     for file_name in files:
                                         if file_name.lower().endswith(".pdf"):
-                                            all_data.append(process_pdf(os.path.join(root, file_name), file_name))
+                                            files_to_process.append((os.path.join(root, file_name), file_name))
                         else:
                             temp_path = os.path.join(temp_dir, uploaded_file.name)
                             with open(temp_path, "wb") as f:
                                 f.write(uploaded_file.getbuffer())
-                            all_data.append(process_pdf(temp_path, uploaded_file.name))
-                st.session_state['all_extracted_data'] = all_data
+                            files_to_process.append((temp_path, uploaded_file.name))
+                    
+                    my_bar = st.progress(0, text="Starting processing...")
+                    for i, (path, name) in enumerate(files_to_process):
+                        st.session_state['all_extracted_data'].append(process_pdf(path, name))
+                        my_bar.progress(int(((i + 1) / len(files_to_process)) * 100), text=f"Processing {name}")
+                    st.success("Processing Complete!")
 
     with c2:
         if st.session_state['all_extracted_data']:
@@ -132,15 +142,20 @@ def main_dashboard():
                 webhook_url = "https://api.integrator.io/v1/exports/6a3e22e548c8b4a733fbeb15/KVk2DW2JtJkffDcxDfAx0o2S0mwcSyXP/data"
                 with st.spinner("Sending..."):
                     for item in st.session_state['all_extracted_data']:
-                        requests.post(webhook_url, json=item)
-                    st.success("Sent successfully!")
+                        try:
+                            response = requests.post(webhook_url, json=item)
+                            if response.status_code in [200, 201, 202, 204]:
+                                st.success(f"Sent {item['fileName']} successfully")
+                            else:
+                                st.error(f"Failed {item['fileName']}: {response.status_code}")
+                        except Exception as e:
+                            st.error(f"Error: {e}")
 
     with c3:
         if st.button("❌ Clear All", use_container_width=True):
-            st.session_state['all_extracted_data'] = None
+            st.session_state['all_extracted_data'] = []
             st.rerun()
 
-    # Table Display
     if st.session_state['all_extracted_data']:
         st.subheader("Batch Review")
         review_data = []
@@ -150,8 +165,12 @@ def main_dashboard():
                     "File": entry["fileName"],
                     "Invoice #": entry["invoiceNumber"],
                     "PO #": entry["poNumber"],
+                    "Order #": entry["orderNumber"],
+                    "Date": entry["invoiceDate"],
                     "Material": item["material"],
                     "Description": item["description"],
+                    "COO": item["coo"],
+                    "Qty": item["quantity"],
                     "Total": entry["totalAmount"]
                 })
         st.dataframe(pd.DataFrame(review_data))
