@@ -11,9 +11,9 @@ import pandas as pd
 from datetime import datetime
 
 # --- CONFIGURATION ---
-# Updated with your logo
-st.set_page_config(page_title="Vincent Cloud", page_icon="logo.jfif")
-st.image("logo.jfif", width=150)
+# Using an emoji for the tab icon, and your URL for the main logo
+st.set_page_config(page_title="Vincent Cloud", page_icon="☁️")
+st.image("https://media.licdn.com/dms/image/v2/D4D0BAQFJviu2NEE-Sw/company-logo_200_200/company-logo_200_200/0/1667374445161/vincent_clouds_logo?e=2147483647&v=beta&t=Jhv9ka9lcSdISkUbqyYaQ36SesJSXP0Br7xNAeEoR_k", width=150)
 st.title("📄 Vincent Cloud (Nilfisk Invoice Parser)")
 
 # --- CLEANING HELPERS ---
