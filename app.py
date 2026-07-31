@@ -25,7 +25,7 @@ def login_screen():
     username = st.text_input("Username")
     password = st.text_input("Password", type="password")
     if st.button("Login"):
-        if username == "VincentCloud" and password == "Vincent@123":
+        if username == "admin" and password == "Vincent@123":
             st.session_state['authenticated'] = True
             st.rerun()
         else:
@@ -91,7 +91,7 @@ def main_dashboard():
                         if "Original Invoice" in row_str:
                             continue
 
-                        # Updated Regex: Handles space-separated numbers like "147 1246 510"
+                        # Regex: Handles space-separated numbers like "147 1246 510"
                         material_match = re.search(r"(\d{3}[\s-]?\d{4}[\s-]?\d{3}|[A-Z]{2,}\d{2,}[A-Z\d]*)", row_str)
                         coo_match = re.search(r"(?:COO|Country of Origin)\s*[:\s]*([A-Z]{2})", row_str, re.IGNORECASE)
 
